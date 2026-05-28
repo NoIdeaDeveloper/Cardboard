@@ -1,4 +1,5 @@
 import base64
+import difflib
 import certifi
 import csv
 import glob
@@ -1012,13 +1013,31 @@ def export_pdf(db: Session = Depends(get_db)):
 
 @router.get("/export/json")
 def export_json(db: Session = Depends(get_db)):
-    """Export the full collection as a JSON download (all fields, all statuses)."""
+    """Export the full collection, sessions, and players as a JSON download."""
     games = db.query(models.Game).all()
-    results = build_game_responses(games, db)
+    game_results = build_game_responses(games, db)
+    sessions = db.query(models.PlaySession).all()
+    session_rows = []
+    for s in sessions:
+        d = schemas.PlaySessionResponse.model_validate(s).model_dump(mode="json")
+        d["players"] = [
+            {"name": p.player.name, "score": p.score, "winner": p.winner}
+            for p in s.players
+        ]
+        session_rows.append(d)
+    players = db.query(models.Player).all()
+    player_rows = [schemas.PlayerOut.model_validate(p).model_dump(mode="json") for p in players]
+    payload = {
+        "export_date": datetime.now(timezone.utc).isoformat(),
+        "version": "1.0",
+        "games": [r.model_dump(mode="json") for r in game_results],
+        "sessions": session_rows,
+        "players": player_rows,
+    }
     ts = _date.today().strftime("%Y-%m-%d")
-    filename = f"cardboard-collection-{ts}.json"
+    filename = f"cardboard-export-{ts}.json"
     return Response(
-        content=json.dumps([r.model_dump(mode="json") for r in results], default=str, indent=2),
+        content=json.dumps(payload, default=str, indent=2),
         media_type="application/json",
         headers={
             "Content-Disposition": f'attachment; filename="{_safe_header_filename(filename)}"',
@@ -1062,6 +1081,31 @@ def export_csv(db: Session = Depends(get_db)):
             "Content-Disposition": f'attachment; filename="{_safe_header_filename(filename)}"',
             "Cache-Control": "no-cache",
         },
+    )
+
+
+@router.get("/export/images")
+def export_images(background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    """Export all locally-stored game images as a ZIP download."""
+    games = db.query(models.Game).filter(models.Game.image_url.isnot(None)).all()
+    ts = _date.today().strftime("%Y-%m-%d")
+    filename = f"cardboard-images-{ts}.zip"
+    tmp = tempfile.NamedTemporaryFile(suffix=".zip", delete=False)
+    with zipfile.ZipFile(tmp.name, "w", zipfile.ZIP_DEFLATED) as zf:
+        for game in games:
+            url = game.image_url
+            if not url or url.startswith("http"):
+                continue
+            path = os.path.join(FRONTEND_PATH or ".", url.lstrip("/"))
+            if os.path.isfile(path):
+                arcname = f"game-{game.id}-{os.path.basename(path)}"
+                zf.write(path, arcname)
+    tmp.close()
+    background_tasks.add_task(os.remove, tmp.name)
+    return FileResponse(
+        tmp.name,
+        media_type="application/zip",
+        filename=filename,
     )
 
 
@@ -1430,6 +1474,67 @@ def _validate_parent_game_id(parent_id: Optional[int], self_id: Optional[int], d
         raise HTTPException(status_code=400, detail="Parent game not found")
     if parent.parent_game_id is not None:
         raise HTTPException(status_code=400, detail="Cannot nest expansions — the target game is already an expansion")
+
+
+@router.get("/check-duplicate", response_model=schemas.DuplicateCheckResponse)
+def check_duplicate(
+    name: str = Query(..., min_length=1, max_length=255),
+    bgg_id: Optional[int] = Query(None),
+    db: Session = Depends(get_db),
+):
+    """Check for potential duplicate games before adding a new one."""
+    name_lower = name.strip().lower()
+    if not name_lower:
+        return schemas.DuplicateCheckResponse(duplicates=[])
+
+    # Fetch all games for comparison (collection is typically small enough)
+    games = db.query(models.Game.id, models.Game.name, models.Game.status, models.Game.bgg_id).all()
+
+    results: list[schemas.DuplicateCheckEntry] = []
+
+    for g in games:
+        reason = None
+        g_name_lower = (g.name or "").lower()
+
+        if g_name_lower == name_lower:
+            reason = "exact_name"
+        elif bgg_id is not None and g.bgg_id == bgg_id:
+            reason = "same_bgg_id"
+        elif _fuzzy_match(name_lower, g_name_lower):
+            reason = "similar_name"
+        elif _possible_expansion(name_lower, g_name_lower):
+            reason = "possible_expansion"
+
+        if reason:
+            results.append(schemas.DuplicateCheckEntry(
+                id=g.id, name=g.name, status=g.status or "owned",
+                bgg_id=g.bgg_id, reason=reason,
+            ))
+
+    return schemas.DuplicateCheckResponse(duplicates=results[:5])
+
+
+def _fuzzy_match(a: str, b: str) -> bool:
+    """Simple fuzzy match: one contains the other (min 3 chars) or similarity ratio > 0.8."""
+    if (a in b or b in a) and len(a) > 2 and len(b) > 2:
+        return True
+    return difflib.SequenceMatcher(None, a, b).ratio() > 0.8
+
+
+def _possible_expansion(name: str, candidate: str) -> bool:
+    """Detect if name looks like an expansion of candidate or vice versa."""
+    exp_markers = ["expansion", "exp", "expansion for", "expansion:", "promo", "mini expansion"]
+    name_has_marker = any(m in name for m in exp_markers)
+    cand_has_marker = any(m in candidate for m in exp_markers)
+    if not name_has_marker and not cand_has_marker:
+        return False
+    # Strip markers and compare core names
+    core_name = name
+    core_cand = candidate
+    for m in exp_markers:
+        core_name = core_name.replace(m, "").strip(" :-")
+        core_cand = core_cand.replace(m, "").strip(" :-")
+    return core_name == core_cand or core_name in core_cand or core_cand in core_name
 
 
 @router.post("/", response_model=schemas.GameResponse, status_code=201)
@@ -2117,6 +2222,171 @@ def suggest_games(body: schemas.SuggestRequest, db: Session = Depends(get_db)):
             reasons=reasons[:3],
         ))
     return results
+
+
+# ===== Group Recommend (Player Matchmaking) =====
+
+@router.post("/group-recommend", response_model=schemas.GroupRecommendResponse)
+def group_recommend(body: schemas.GroupRecommendRequest, db: Session = Depends(get_db)):
+    """Recommend games for a specific group of players."""
+    from datetime import date, timedelta
+
+    player_ids = body.player_ids
+    player_count = len(player_ids)
+    today = date.today()
+    recent_cutoff = today - timedelta(days=30)
+    six_months_ago = today - timedelta(days=180)
+
+    # Fetch player names for winner lookup
+    player_rows = db.query(models.Player.id, models.Player.name).filter(models.Player.id.in_(player_ids)).all()
+    player_names = [p.name for p in player_rows]
+
+    # Candidate games: owned, supports player count, not expansions
+    query = db.query(models.Game).filter(
+        models.Game.status == "owned",
+        models.Game.parent_game_id.is_(None),
+    )
+    query = query.filter(
+        (models.Game.min_players.is_(None)) | (models.Game.min_players <= player_count),
+        (models.Game.max_players.is_(None)) | (models.Game.max_players >= player_count),
+    )
+    if body.max_minutes:
+        query = query.filter(
+            (models.Game.min_playtime.is_(None)) | (models.Game.min_playtime <= body.max_minutes),
+        )
+    if body.mechanic:
+        query = query.join(models.GameMechanic, models.GameMechanic.game_id == models.Game.id).join(
+            models.Mechanic, models.Mechanic.id == models.GameMechanic.mechanic_id
+        ).filter(models.Mechanic.name == body.mechanic)
+
+    games = query.all()
+    if not games:
+        return schemas.GroupRecommendResponse(recommendations=[])
+
+    game_ids = [g.id for g in games]
+
+    # Session counts per game
+    session_counts = {
+        row.game_id: row.count
+        for row in db.query(
+            models.PlaySession.game_id,
+            func.count(models.PlaySession.id).label("count")
+        ).filter(models.PlaySession.game_id.in_(game_ids)).group_by(models.PlaySession.game_id).all()
+    }
+
+    # For each game, find sessions where ALL requested players participated
+    # and compute average session rating among those sessions
+    all_sessions = (
+        db.query(models.PlaySession.game_id, models.PlaySession.id, models.PlaySession.session_rating,
+                 models.PlaySession.played_at)
+        .filter(models.PlaySession.game_id.in_(game_ids))
+        .all()
+    )
+
+    session_ids = [s.id for s in all_sessions]
+    # Which sessions have which players
+    session_players = (
+        db.query(models.SessionPlayer.session_id, models.SessionPlayer.player_id)
+        .filter(models.SessionPlayer.session_id.in_(session_ids))
+        .all()
+    )
+    session_player_set: dict[int, set[int]] = {}
+    for sid, pid in session_players:
+        session_player_set.setdefault(sid, set()).add(pid)
+
+    # Group stats per game
+    group_stats: dict[int, dict] = {gid: {"group_sessions": 0, "avg_rating": None, "last_group_play": None}
+                                     for gid in game_ids}
+    for s in all_sessions:
+        players_in_session = session_player_set.get(s.id, set())
+        if player_ids and players_in_session.issuperset(set(player_ids)):
+            gs = group_stats[s.game_id]
+            gs["group_sessions"] += 1
+            if s.session_rating is not None:
+                if gs["avg_rating"] is None:
+                    gs["avg_rating"] = []
+                gs["avg_rating"].append(s.session_rating)
+            if s.played_at and (gs["last_group_play"] is None or s.played_at > gs["last_group_play"]):
+                gs["last_group_play"] = s.played_at
+
+    for gid in group_stats:
+        ar = group_stats[gid]["avg_rating"]
+        if ar:
+            group_stats[gid]["avg_rating"] = sum(ar) / len(ar)
+
+    scored = []
+    for g in games:
+        score = 0.0
+        reasons = []
+        gs = group_stats.get(g.id, {"group_sessions": 0, "avg_rating": None, "last_group_play": None})
+        group_sessions = gs["group_sessions"]
+        avg_rating = gs["avg_rating"]
+        last_group_play = gs["last_group_play"]
+        total_sessions = session_counts.get(g.id, 0)
+
+        # Unplayed by group = strong recommendation
+        if group_sessions == 0:
+            score += 30.0
+            reasons.append("New for this group")
+            if total_sessions > 0:
+                reasons.append("Proven with others")
+        else:
+            score += 10.0
+            if avg_rating is not None and avg_rating >= 4.0:
+                score += 15.0
+                reasons.append(f"Group loves it ({avg_rating:.1f}/5)")
+            elif avg_rating is not None and avg_rating >= 3.0:
+                score += 5.0
+                reasons.append("Group enjoys it")
+            else:
+                reasons.append("Played before")
+
+        # Recency penalty
+        if last_group_play:
+            days_since = (today - last_group_play).days
+            if days_since < 30:
+                score -= 15.0
+            elif days_since < 90:
+                score -= 5.0
+            elif days_since > 180:
+                score += 10.0
+                reasons.append("Not played in 6+ months")
+
+        # Player count exact fit bonus
+        if g.min_players is not None and g.max_players is not None:
+            if g.min_players == player_count or g.max_players == player_count:
+                score += 5.0
+
+        # User rating bonus
+        if g.user_rating and g.user_rating >= 8:
+            score += 10.0
+            reasons.append("Personal favorite")
+        elif g.user_rating and g.user_rating >= 6:
+            score += 3.0
+
+        scored.append((score, g, reasons))
+
+    scored.sort(key=lambda x: -x[0])
+
+    # Deduplicate reasons and cap results
+    results = []
+    seen_reasons: set[str] = set()
+    for score, g, reasons in scored:
+        if len(results) >= 5:
+            break
+        key_reason = reasons[0] if reasons else ""
+        if key_reason and key_reason in seen_reasons and len(results) >= 2:
+            continue
+        if key_reason:
+            seen_reasons.add(key_reason)
+        confidence = min(1.0, score / 80.0)
+        results.append(schemas.GroupRecommendEntry(
+            game=schemas.GameOut.model_validate(g),
+            reason=" · ".join(reasons[:2]) if reasons else "A good fit for your group",
+            confidence=round(confidence, 2),
+        ))
+
+    return schemas.GroupRecommendResponse(recommendations=results)
 
 
 # ===== BGG Play History Import =====

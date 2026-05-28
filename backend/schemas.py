@@ -42,6 +42,7 @@ class GameBase(BaseModel):
     purchase_date: Optional[date] = None
     purchase_price: Optional[float] = Field(None, ge=0)
     purchase_location: Optional[str] = Field(None, max_length=255)
+    sale_price: Optional[float] = Field(None, ge=0)
     location: Optional[str] = Field(None, max_length=255)
     show_location: bool = False
     user_rating: Optional[float] = Field(None, ge=1, le=10)
@@ -91,6 +92,7 @@ class GameUpdate(BaseModel):
     purchase_date: Optional[date] = None
     purchase_price: Optional[float] = Field(None, ge=0)
     purchase_location: Optional[str] = Field(None, max_length=255)
+    sale_price: Optional[float] = Field(None, ge=0)
     location: Optional[str] = Field(None, max_length=255)
     show_location: Optional[bool] = None
     user_rating: Optional[float] = Field(None, ge=1, le=10)
@@ -125,6 +127,9 @@ class GameResponse(GameBase):
     model_config = ConfigDict(from_attributes=True)
 
 
+GameOut = GameResponse
+
+
 class CollectionStatsResponse(BaseModel):
     total_owned: int
     total_wishlist: int
@@ -140,6 +145,8 @@ class CollectionStatsResponse(BaseModel):
     label_counts: Dict[str, int] = {}
     designer_counts: Dict[str, int] = {}
     publisher_counts: Dict[str, int] = {}
+    play_pct: int = 0
+    neglected_favorite: Optional[NeglectedFavoriteEntry] = None
 
 
 class GameImageResponse(BaseModel):
@@ -175,6 +182,19 @@ class PlaySessionCreate(BaseModel):
     solo: bool = False
     player_names: Optional[List[Annotated[str, StringConstraints(max_length=255)]]] = Field(None, max_length=50)  # names to link/create as players
     scores: Optional[Dict[str, int]] = None  # player_name -> score
+
+
+class BulkSessionCreate(BaseModel):
+    game_ids: List[int]
+    played_at: date
+    player_count: Optional[int] = Field(None, ge=1)
+    duration_minutes: Optional[int] = Field(None, ge=1)
+    notes: Optional[str] = Field(None, max_length=2000)
+    session_rating: Optional[int] = Field(None, ge=1, le=5)
+    winner: Optional[str] = Field(None, max_length=255)
+    solo: bool = False
+    player_names: Optional[List[Annotated[str, StringConstraints(max_length=255)]]] = Field(None, max_length=50)
+    scores: Optional[Dict[str, int]] = None
 
 
 class PlaySessionUpdate(BaseModel):
@@ -564,3 +584,60 @@ class StatsResponse(BaseModel):
     play_projection: Optional[PlayProjection] = None
     collection_churn: Optional[CollectionChurn] = None
     health_notifications: List[str] = []
+    trade_sell: List[TradeSellEntry] = []
+
+
+class GroupRecommendRequest(BaseModel):
+    player_ids: List[int] = Field(..., min_length=1, max_length=10)
+    max_minutes: Optional[int] = Field(None, ge=1, le=1440)
+    mechanic: Optional[str] = Field(None, max_length=100)
+
+
+class GroupRecommendEntry(BaseModel):
+    game: GameOut
+    reason: str
+    confidence: float
+
+
+class GroupRecommendResponse(BaseModel):
+    recommendations: List[GroupRecommendEntry] = []
+
+
+class DuplicateCheckEntry(BaseModel):
+    id: int
+    name: str
+    status: str
+    bgg_id: Optional[int] = None
+    reason: str = ""  # "exact_name", "similar_name", "same_bgg_id", "possible_expansion"
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class DuplicateCheckResponse(BaseModel):
+    duplicates: List[DuplicateCheckEntry] = []
+
+
+class RecommendGameResponse(BaseModel):
+    game: GameOut
+    reason: str
+    reason_detail: str
+    confidence: float
+    alternatives: List[GameOut] = []
+
+
+class TradeSellEntry(BaseModel):
+    id: int
+    name: str
+    purchase_price: Optional[float] = None
+    sale_price: Optional[float] = None
+    user_rating: Optional[float] = None
+    last_played: Optional[date] = None
+    session_count: int = 0
+    score: int = 0
+    reason: str = ""
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class TradeSellResponse(BaseModel):
+    games: List[TradeSellEntry] = []

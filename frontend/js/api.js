@@ -174,8 +174,20 @@ const API = {
   // CSV import
   importCSV: (file) => uploadFile('/games/import/csv', file),
 
+  // Duplicate / expansion guard
+  checkDuplicate: (name, bggId) => request('GET', `/games/check-duplicate?name=${encodeURIComponent(name)}${bggId ? `&bgg_id=${bggId}` : ''}`),
+
   // Game night suggestions
   suggestGames: (playerCount, maxMinutes) => request('POST', '/games/suggest', { player_count: playerCount, max_minutes: maxMinutes }),
+
+  // Group recommendation (player matchmaking)
+  groupRecommend: (playerIds, maxMinutes, mechanic) => request('POST', '/games/group-recommend', { player_ids: playerIds, max_minutes: maxMinutes, mechanic }),
+
+  // "Play This Next" single-game recommendation
+  recommend: (params) => request('GET', `/recommend?${params}`),
+
+  // Bulk session logging
+  bulkSession: (data) => request('POST', '/sessions/bulk', data),
 
   // Players
   getPlayers:         ()           => request('GET',    '/players/'),

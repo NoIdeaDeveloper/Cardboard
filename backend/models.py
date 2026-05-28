@@ -25,6 +25,7 @@ class Game(Base):
     purchase_date = Column(Date, nullable=True)
     purchase_price = Column(Float, nullable=True)
     purchase_location = Column(String(255), nullable=True)
+    sale_price = Column(Float, nullable=True)
     user_rating = Column(Float, nullable=True)  # 1-10
     user_notes = Column(Text, nullable=True)
     location = Column(String(255), nullable=True)

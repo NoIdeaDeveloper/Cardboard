@@ -103,8 +103,21 @@
       <!-- Active filter indicator -->
       <div id="filter-active-bar" class="filter-active-bar" style="display:none">
         <span id="filter-active-label" class="filter-active-label"></span>
+        <button class="filter-active-share" id="filter-active-share" aria-label="Copy filtered link">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+          <span>Share</span>
+        </button>
         <button class="filter-active-clear" id="filter-active-clear">Clear filters</button>
       </div>
+
+      <!-- Dust-off reminder banner -->
+      <div id="reminder-banner" class="reminder-banner" style="display:none" role="status" aria-live="polite"></div>
+
+      <!-- Play This Next recommendation card -->
+      <div id="recommend-card" class="recommend-card" style="display:none" role="region" aria-label="Recommended game"></div>
+
+      <!-- Collection Health Action Plan -->
+      <div id="action-plan-card" class="action-plan-card" style="display:none" role="region" aria-label="Action plan"></div>
 
       <!-- Advanced filter panel -->
       <div class="filter-panel" id="filter-panel">
@@ -477,6 +490,11 @@
       <button class="footer-link" id="retake-tour-btn" title="Retake feature tour">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M9 12l-2-2 2-2"/><path d="M7 10h8a4 4 0 0 1 0 8H7"/></svg>
         <span>Tour</span>
+      </button>
+      <span class="footer-separator">·</span>
+      <button class="footer-link" id="export-btn" title="Export your data">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        <span>Export</span>
       </button>
     </div>
   </footer>

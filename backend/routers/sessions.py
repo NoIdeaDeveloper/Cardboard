@@ -2,7 +2,7 @@ import logging
 from datetime import datetime, timezone
 from typing import List
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import desc, func
 from sqlalchemy.orm import Session
 
@@ -178,3 +178,36 @@ def delete_session(session_id: int, db: Session = Depends(get_db)):
     _sync_last_played(game_id, db, commit=False)
     db.commit()
     logger.info("Session deleted: id=%d game_id=%d", session_id, game_id)
+
+
+@router.post("/api/sessions/bulk", response_model=List[schemas.PlaySessionResponse], status_code=201)
+def add_bulk_session(body: schemas.BulkSessionCreate, db: Session = Depends(get_db)):
+    if not body.game_ids:
+        raise HTTPException(status_code=400, detail="No game IDs provided")
+    for game_id in body.game_ids:
+        get_game_or_404(game_id, db)
+    data = body.model_dump(exclude={"game_ids", "player_names", "scores"})
+    db_sessions = []
+    for game_id in body.game_ids:
+        db_session = models.PlaySession(game_id=game_id, **data)
+        db.add(db_session)
+        db.flush()
+        if body.player_names:
+            _link_players(db_session.id, body.player_names, db, body.scores)
+        _sync_last_played(game_id, db, commit=False)
+        db_sessions.append((game_id, db_session))
+    db.commit()
+    responses = []
+    for game_id, db_session in db_sessions:
+        db.refresh(db_session)
+        logger.info("Bulk session logged: game_id=%d played_at=%s", game_id, body.played_at)
+        agg = (
+            db.query(func.count(models.PlaySession.id), func.coalesce(func.sum(models.PlaySession.duration_minutes), 0))
+            .filter(models.PlaySession.game_id == game_id)
+            .first()
+        )
+        resp = _attach_players(db_session, db)
+        resp.game_session_count = int(agg[0] or 0)
+        resp.game_total_minutes = int(agg[1] or 0)
+        responses.append(resp)
+    return responses

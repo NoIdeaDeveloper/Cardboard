@@ -522,6 +522,195 @@ button.footer-link {
 .filter-active-clear:hover { color: var(--text); background: var(--bg-3); }
 .filter-active-clear:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
+.filter-active-share {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: none;
+  color: var(--text-3);
+  font-size: 0.78rem;
+  cursor: pointer;
+  font-family: inherit;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  transition: color var(--transition), background var(--transition);
+}
+.filter-active-share:hover { color: var(--text); background: var(--bg-3); }
+.filter-active-share:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.reminder-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  background: rgba(201,168,76,0.10);
+  border: 1px solid rgba(201,168,76,0.25);
+  border-radius: var(--radius-sm);
+  font-size: 0.85rem;
+  color: var(--text-2);
+  margin-bottom: 10px;
+}
+.reminder-banner .reminder-icon { flex-shrink: 0; color: var(--accent); }
+.reminder-banner .reminder-text { flex: 1; }
+.reminder-banner .reminder-text strong { color: var(--text); }
+.reminder-banner .reminder-actions { display: flex; gap: 6px; }
+.reminder-banner .reminder-btn {
+  background: none;
+  border: none;
+  color: var(--text-3);
+  font-size: 0.78rem;
+  cursor: pointer;
+  font-family: inherit;
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
+  transition: color var(--transition), background var(--transition);
+}
+.reminder-banner .reminder-btn.primary { color: var(--accent); font-weight: 500; }
+.reminder-banner .reminder-btn:hover { color: var(--text); background: var(--bg-3); }
+.reminder-banner .reminder-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.recommend-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 12px;
+}
+.recommend-card .recommend-thumb {
+  width: 56px;
+  height: 56px;
+  border-radius: var(--radius-sm);
+  object-fit: cover;
+  flex-shrink: 0;
+  background: var(--bg-3);
+}
+.recommend-card .recommend-thumb-placeholder {
+  width: 56px;
+  height: 56px;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+  background: var(--bg-3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-3);
+}
+.recommend-card .recommend-body { flex: 1; min-width: 0; }
+.recommend-card .recommend-title {
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: var(--text);
+  margin: 0 0 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.recommend-card .recommend-meta {
+  font-size: 0.78rem;
+  color: var(--text-2);
+  margin: 0;
+}
+.recommend-card .recommend-reason {
+  font-size: 0.75rem;
+  color: var(--accent);
+  margin-top: 2px;
+}
+.recommend-card .recommend-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.recommend-card .recommend-btn {
+  background: var(--accent);
+  color: #111;
+  border: none;
+  font-family: inherit;
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: opacity var(--transition), transform var(--transition);
+}
+.recommend-card .recommend-btn:hover { opacity: 0.9; transform: translateY(-1px); }
+.recommend-card .recommend-btn.secondary {
+  background: transparent;
+  color: var(--text-3);
+  border: 1px solid var(--border);
+}
+.recommend-card .recommend-btn.secondary:hover { color: var(--text); background: var(--bg-3); }
+
+.action-plan-card {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  margin-bottom: 12px;
+}
+.action-plan-card .action-plan-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.action-plan-card .action-plan-title {
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: var(--text);
+  margin: 0;
+}
+.action-plan-card .action-plan-score {
+  font-size: 0.78rem;
+  color: var(--text-2);
+}
+.action-plan-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.action-plan-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+.action-plan-item:last-child { border-bottom: none; }
+.action-plan-item input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+  flex-shrink: 0;
+}
+.action-plan-item label {
+  flex: 1;
+  font-size: 0.82rem;
+  color: var(--text-2);
+  cursor: pointer;
+}
+.action-plan-item label strong { color: var(--text); }
+.action-plan-item .action-plan-do {
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+}
+.action-plan-item .action-plan-do:hover { background: rgba(201,168,76,0.1); }
+.action-plan-empty {
+  font-size: 0.82rem;
+  color: var(--text-3);
+  text-align: center;
+  padding: 8px 0;
+}
+
 /* Filter panel */
 .filter-panel {
   overflow: hidden;
@@ -5024,6 +5213,38 @@ img.ql-chip-avatar { display: block; object-fit: cover; }
   transform: translateX(40px);
   transition: all 0.25s ease-in;
   pointer-events: none;
+}
+
+/* ===== Game Night Player Chips ===== */
+.gn-player-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.gn-player-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--fg);
+  font-size: 0.85rem;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.15s, border-color 0.15s;
+}
+.gn-player-chip:hover {
+  border-color: var(--accent);
+}
+.gn-player-chip input[type="checkbox"] {
+  margin: 0;
+  accent-color: var(--accent);
+}
+.gn-player-chip:has(input:checked) {
+  background: var(--accent-bg);
+  border-color: var(--accent);
 }
 
 /* ===== Players Modal ===== */

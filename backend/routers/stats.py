@@ -1,7 +1,8 @@
 import logging
 from datetime import date, timedelta
+from typing import Optional
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import JSONResponse, Response
 from sqlalchemy import case, func
 from sqlalchemy.orm import Session
@@ -28,6 +29,75 @@ def _status_counts(db: Session) -> dict:
 def _iso_month_to_label(iso_month: str) -> str:
     """Convert a 'YYYY-MM' string to a display label like 'Jan 2025'."""
     return date(int(iso_month[:4]), int(iso_month[5:7]), 1).strftime("%b %Y")
+
+
+def _trade_sell_candidates(db: Session, today: date, session_counts_rows: list) -> list[schemas.TradeSellEntry]:
+    """Return curated list of owned games that might be good trade/sell candidates."""
+    six_months_ago = today - timedelta(days=180)
+    three_months_ago = today - timedelta(days=90)
+    sc_map = {gid: cnt for gid, cnt in session_counts_rows}
+
+    games = (
+        db.query(
+            models.Game.id,
+            models.Game.name,
+            models.Game.purchase_price,
+            models.Game.sale_price,
+            models.Game.user_rating,
+            models.Game.last_played,
+        )
+        .filter(models.Game.status == "owned")
+        .filter(models.Game.parent_game_id.is_(None))
+        .all()
+    )
+
+    scored = []
+    for g in games:
+        score = 0
+        reasons = []
+        session_count = sc_map.get(g.id, 0)
+
+        if session_count == 0 and g.purchase_price and g.purchase_price > 0:
+            score += 40
+            reasons.append("Never played")
+        elif g.last_played and g.last_played < six_months_ago:
+            score += 20
+            reasons.append("Not played in 6+ months")
+        elif g.last_played and g.last_played < three_months_ago:
+            score += 10
+            reasons.append("Not played in 3+ months")
+
+        if g.user_rating is not None and g.user_rating < 5:
+            score += 25
+            reasons.append(f"Low rating ({g.user_rating}/10)")
+        elif g.user_rating is not None and g.user_rating < 7:
+            score += 10
+            reasons.append(f"Mediocre rating ({g.user_rating}/10)")
+
+        if g.purchase_price and g.purchase_price > 0 and session_count > 0:
+            cpp = g.purchase_price / session_count
+            if cpp > 20:
+                score += 15
+                reasons.append(f"High cost per play (${cpp:.0f})")
+            elif cpp > 10:
+                score += 5
+                reasons.append(f"Costly per play (${cpp:.0f})")
+
+        if score > 0:
+            scored.append(schemas.TradeSellEntry(
+                id=g.id,
+                name=g.name,
+                purchase_price=g.purchase_price,
+                sale_price=g.sale_price,
+                user_rating=g.user_rating,
+                last_played=g.last_played,
+                session_count=session_count,
+                score=score,
+                reason="; ".join(reasons),
+            ))
+
+    scored.sort(key=lambda x: x.score, reverse=True)
+    return scored[:10]
 
 
 @router.get("/stats", response_model=schemas.StatsResponse)
@@ -718,6 +788,9 @@ def get_stats(db: Session = Depends(get_db)):
         )
     health_notifications = health_notifications[:4]
 
+    # ── Trade / Sell Curation ──────────────────────────────────────────────
+    trade_sell_games = _trade_sell_candidates(db, today, session_counts_rows)
+
     logger.info("Stats computed: %d games, %d sessions, %d expansions", total_games, total_sessions, total_expansions)
 
     return schemas.StatsResponse(
@@ -759,6 +832,7 @@ def get_stats(db: Session = Depends(get_db)):
         play_projection=play_projection,
         collection_churn=collection_churn,
         health_notifications=health_notifications,
+        trade_sell=trade_sell_games,
     )
 
 
@@ -876,6 +950,36 @@ def get_collection_stats(request: Request, db: Session = Depends(get_db)):
     )
     publisher_counts: dict[str, int] = {name: int(cnt) for name, cnt in publisher_count_rows}
 
+    # ── Neglected favorite (most-played owned game, not played in 6+ months) ─
+    today = date.today()
+    six_months_ago = today - timedelta(days=180)
+    neglected_favorite = None
+    if by_status["owned"] > 0:
+        session_counts_rows = (
+            db.query(models.PlaySession.game_id, func.count(models.PlaySession.id))
+            .join(models.Game, models.Game.id == models.PlaySession.game_id)
+            .filter(models.Game.status == "owned")
+            .group_by(models.PlaySession.game_id)
+            .all()
+        )
+        if session_counts_rows:
+            sc_map_all: dict[int, int] = {gid: cnt for gid, cnt in session_counts_rows}
+            neglected_rows = (
+                db.query(models.Game.id, models.Game.name, models.Game.last_played)
+                .filter(
+                    models.Game.status == "owned",
+                    models.Game.last_played.isnot(None),
+                    models.Game.last_played <= six_months_ago,
+                )
+                .all()
+            )
+            if neglected_rows:
+                best = max(neglected_rows, key=lambda r: (sc_map_all.get(r.id, 0), -r.last_played.toordinal()))
+                months_ago = max(1, round((today - best.last_played).days / 30))
+                neglected_favorite = schemas.NeglectedFavoriteEntry(
+                    id=best.id, name=best.name, months_ago=months_ago
+                )
+
     data = schemas.CollectionStatsResponse(
         total_owned=by_status["owned"],
         total_wishlist=by_status["wishlist"],
@@ -891,8 +995,125 @@ def get_collection_stats(request: Request, db: Session = Depends(get_db)):
         label_counts=label_counts,
         designer_counts=designer_counts,
         publisher_counts=publisher_counts,
+        play_pct=round(((by_status["owned"] - unplayed_count) / by_status["owned"]) * 100) if by_status["owned"] else 0,
+        neglected_favorite=neglected_favorite,
     )
     resp = JSONResponse(content=data.model_dump())
     resp.headers["ETag"] = etag
     resp.headers["Cache-Control"] = "private, no-cache"
     return resp
+
+
+# ── Play This Next ───────────────────────────────────────────────────────
+
+@router.get("/recommend", response_model=schemas.RecommendGameResponse)
+def recommend_game(
+    players: Optional[int] = None,
+    minutes: Optional[int] = None,
+    mechanic: Optional[str] = None,
+    exclude: Optional[str] = Query(None, description="Comma-separated game IDs to exclude"),
+    db: Session = Depends(get_db),
+):
+    """Suggest a single best game to play right now."""
+    excluded_ids = [int(x) for x in exclude.split(",") if x.strip().isdigit()] if exclude else []
+    today = date.today()
+
+    candidates = (
+        db.query(models.Game)
+        .filter(models.Game.status == "owned")
+        .filter(models.Game.id.notin_(excluded_ids) if excluded_ids else True)
+        .all()
+    )
+
+    if not candidates:
+        raise HTTPException(status_code=404, detail="No suitable game found")
+
+    # Pre-load session counts for all candidates
+    game_ids = [g.id for g in candidates]
+    session_counts_rows = (
+        db.query(models.PlaySession.game_id, func.count(models.PlaySession.id))
+        .filter(models.PlaySession.game_id.in_(game_ids))
+        .group_by(models.PlaySession.game_id)
+        .all()
+    )
+    sc_map = {gid: cnt for gid, cnt in session_counts_rows}
+
+    scored = []
+    for g in candidates:
+        score = 0.0
+        session_count = sc_map.get(g.id, 0)
+        last_played = g.last_played
+
+        # Base scoring
+        if session_count == 0:
+            score += 40.0
+            reason = "unplayed"
+            added_date = g.date_added.date() if g.date_added else today
+            detail = f"You bought this {max(1, round((today - added_date).days / 30))} month(s) ago but haven't played it yet."
+        elif last_played and (today - last_played).days > 90:
+            score += 25.0
+            reason = "neglected"
+            detail = f"Last played {max(1, round((today - last_played).days / 30))} month(s) ago."
+        else:
+            reason = "player_count_match"
+            detail = "A solid fit for your group."
+
+        if g.user_rating and g.user_rating >= 8:
+            score += 15.0
+
+        # Constraint fit (multiplicative)
+        fit = 1.0
+        if players is not None:
+            min_p = g.min_players
+            max_p = g.max_players
+            if (min_p is None or min_p <= players) and (max_p is None or max_p >= players):
+                fit *= 1.3
+                if reason == "player_count_match":
+                    detail = f"Perfect for {players} players."
+            else:
+                fit *= 0.3
+        if minutes is not None and g.min_playtime:
+            if g.min_playtime <= minutes:
+                fit *= 1.2
+            else:
+                fit *= 0.2
+
+        scored.append((g, score * fit, reason, detail))
+
+    scored.sort(key=lambda x: x[1], reverse=True)
+    if not scored:
+        raise HTTPException(status_code=404, detail="No suitable game found")
+
+    top = scored[0]
+    confidence = min(1.0, top[1] / 100.0)
+
+    # Build alternatives (next 3 distinct reasons, if any)
+    alternatives = []
+    seen_reasons = {top[2]}
+    for g, s, r, d in scored[1:]:
+        if r not in seen_reasons and len(alternatives) < 3:
+            seen_reasons.add(r)
+            alternatives.append(g)
+
+    return schemas.RecommendGameResponse(
+        game=schemas.GameOut.model_validate(top[0]),
+        reason=top[2],
+        reason_detail=top[3],
+        confidence=round(confidence, 2),
+        alternatives=[schemas.GameOut.model_validate(a) for a in alternatives],
+    )
+
+
+# ── Trade / Sell Curation ────────────────────────────────────────────────
+
+@router.get("/stats/trade-sell", response_model=schemas.TradeSellResponse)
+def get_trade_sell_candidates(db: Session = Depends(get_db)):
+    """Return a curated list of owned games that might be good trade/sell candidates."""
+    today = date.today()
+    session_counts_rows = (
+        db.query(models.PlaySession.game_id, func.count(models.PlaySession.id))
+        .group_by(models.PlaySession.game_id)
+        .all()
+    )
+    games = _trade_sell_candidates(db, today, session_counts_rows)
+    return schemas.TradeSellResponse(games=games)

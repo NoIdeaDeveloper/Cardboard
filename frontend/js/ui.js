@@ -261,7 +261,7 @@ function buildModalContent(game, sessions, onSave, onDelete, onAddSession, onDel
       </div>`
     : '';
 
-  const hasPurchaseInfo = game.purchase_date || game.purchase_price != null || game.purchase_location;
+  const hasPurchaseInfo = game.purchase_date || game.purchase_price != null || game.purchase_location || game.sale_price != null;
   // Sum recorded durations; for sessions without duration use min_playtime as
   // fallback (then avg of recorded sessions) so unlogged plays don't silently
   // inflate the cost/hr by understating total hours played.
@@ -280,6 +280,7 @@ function buildModalContent(game, sessions, onSave, onDelete, onAddSession, onDel
         <div class="purchase-info">
           ${game.purchase_date ? `<span class="purchase-field"><span class="purchase-label">Date</span> ${escapeHtml(formatDate(game.purchase_date))}</span>` : ''}
           ${game.purchase_price != null ? `<span class="purchase-field"><span class="purchase-label">Price</span> $${game.purchase_price.toFixed(2)}</span>` : ''}
+          ${game.sale_price != null ? `<span class="purchase-field"><span class="purchase-label">Sold For</span> $${game.sale_price.toFixed(2)}</span>` : ''}
           ${game.purchase_location ? `<span class="purchase-field"><span class="purchase-label">From</span> ${escapeHtml(game.purchase_location)}</span>` : ''}
           ${cph ? `<span class="purchase-field purchase-cph"><span class="purchase-label">Cost/hr</span> $${cph}</span>` : ''}
         </div>
@@ -607,6 +608,10 @@ function buildModalContent(game, sessions, onSave, onDelete, onAddSession, onDel
           <div class="form-group">
             <label for="edit-purchase-price">Purchase Price ($)</label>
             <input type="number" id="edit-purchase-price" class="form-input" step="0.01" min="0" value="${game.purchase_price != null ? game.purchase_price : ''}" autocomplete="off">
+          </div>
+          <div class="form-group">
+            <label for="edit-sale-price">Sale Price ($)</label>
+            <input type="number" id="edit-sale-price" class="form-input" step="0.01" min="0" value="${game.sale_price != null ? game.sale_price : ''}" autocomplete="off">
           </div>
           <div class="form-group full-width">
             <label for="edit-purchase-location">Purchase Location</label>
@@ -1531,6 +1536,7 @@ function buildModalContent(game, sessions, onSave, onDelete, onAddSession, onDel
         labels:           csvToJson(el.querySelector('#edit-labels').value),
         purchase_date:    el.querySelector('#edit-purchase-date').value || null,
         purchase_price:   el.querySelector('#edit-purchase-price').value !== '' ? parseFloat(el.querySelector('#edit-purchase-price').value) : null,
+        sale_price:       el.querySelector('#edit-sale-price').value !== '' ? parseFloat(el.querySelector('#edit-sale-price').value) : null,
         purchase_location: el.querySelector('#edit-purchase-location').value.trim() || null,
         location:           el.querySelector('#edit-location').value.trim() || null,
         show_location:      el.querySelector('#edit-show-location').checked,
@@ -1974,12 +1980,12 @@ function buildStatsView(stats, games, prefs = {}, onPrefsChange = null, goals = 
     show_sessions_by_month: true, show_play_heatmap: true,
     show_sessions_by_dow: true, show_never_played: true,
     show_dormant: true, show_top_mechanics: true, show_collection_value: true,
-    show_milestones: true, show_goals: true, show_cooling_off: true,
+    show_milestones: true, show_goals: true, show_cooling_off: true, show_trade_sell: true,
     section_order: ['summary', 'most_played', 'top_players', 'recently_played', 'recently_added',
                     'ratings', 'labels', 'added_by_month', 'sessions_by_month', 'play_heatmap',
                     'sessions_by_dow',
                     'never_played', 'cooling_off', 'dormant', 'top_mechanics', 'collection_value',
-                    'milestones', 'goals'],
+                    'trade_sell', 'milestones', 'goals'],
   };
   let currentPrefs = { ...SECTION_DEFAULTS, ...prefs };
 
@@ -2001,6 +2007,7 @@ function buildStatsView(stats, games, prefs = {}, onPrefsChange = null, goals = 
     ['show_dormant',           'Dormant Games',      'dormant'],
     ['show_top_mechanics',     'Top Mechanics',      'top_mechanics'],
     ['show_collection_value',  'Collection Value',   'collection_value'],
+    ['show_trade_sell',        'Trade / Sell',       'trade_sell'],
     ['show_milestones',        'Milestones',         'milestones'],
     ['show_goals',             'Goals & Challenges', 'goals'],
   ];
@@ -2465,6 +2472,21 @@ function buildStatsView(stats, games, prefs = {}, onPrefsChange = null, goals = 
     stats.collection_value || {}, currentPrefs.show_collection_value === false
   ).outerHTML;
 
+  // Trade / Sell Curation
+  const tradeSell = stats.trade_sell || [];
+  const tradeSellHtml = tradeSell.length ? `
+    <div class="stats-section" data-section="trade_sell"${!currentPrefs.show_trade_sell ? ' style="display:none"' : ''}>
+      ${_sectionInfoHeader('Trade / Sell Candidates', 'About Trade / Sell', '<p class="health-info-intro">Games that might be good candidates to trade or sell based on low play count, low ratings, high cost-per-play, or long time since last played.</p>')}
+      <p class="insight-subtext">Curated from your collection</p>
+      <div class="insight-game-list">
+        ${tradeSell.map(g => `
+          <div class="insight-game-row" data-game-id="${g.id}">
+            <span class="insight-game-name">${escapeHtml(g.name)}</span>
+            <span class="insight-game-meta">${escapeHtml(g.reason)} · Score ${g.score}</span>
+          </div>`).join('')}
+      </div>
+    </div>` : '';
+
   // Player Leaderboard
   const topPlayers = stats.top_players || [];
   const topPlayersHtml = topPlayers.length ? `
@@ -2740,6 +2762,7 @@ function buildStatsView(stats, games, prefs = {}, onPrefsChange = null, goals = 
     dormant:           dormantHtml,
     top_mechanics:     topMechanicsHtml,
     collection_value:  collectionValueHtml,
+    trade_sell:        tradeSellHtml,
     goals:             goalsHtml,
   };
   const orderedSectionsHtml = currentPrefs.section_order.map(k => sectionsMap[k] || '').join('');

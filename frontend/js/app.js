@@ -42,6 +42,51 @@
     });
   }
 
+  // ===== URL Sync for Shareable Filtered Views =====
+
+  function syncUrlParams() {
+    const params = new URLSearchParams();
+    if (state.statusFilter && state.statusFilter !== 'owned') params.set('status', state.statusFilter);
+    if (state.search) params.set('q', state.search);
+    if (state.sortBy && state.sortBy !== 'name') params.set('sort', state.sortBy + (state.sortDir === 'desc' ? '_desc' : ''));
+    if (state.viewMode && state.viewMode !== 'grid') params.set('view', state.viewMode);
+    if (state.filterNeverPlayed) params.set('never_played', '1');
+    if (state.filterPlayers !== null) params.set('players', String(state.filterPlayers));
+    if (state.filterTime !== null) params.set('time', String(state.filterTime));
+    if (state.filterMechanics.length) params.set('mechanics', state.filterMechanics.join(','));
+    if (state.filterCategories.length) params.set('categories', state.filterCategories.join(','));
+    if (state.filterLocation !== null) params.set('location', state.filterLocation);
+    const qs = params.toString();
+    const url = qs ? '?' + qs : location.pathname;
+    if (location.search !== '?' + qs && !(location.search === '' && qs === '')) {
+      history.replaceState({ cardboard: true }, '', url);
+    }
+  }
+
+  function loadFromUrlParams() {
+    const params = new URLSearchParams(location.search);
+    if (params.has('status')) {
+      const s = params.get('status');
+      if (['all', 'owned', 'wishlist', 'sold'].includes(s)) state.statusFilter = s;
+    }
+    if (params.has('q')) state.search = params.get('q');
+    if (params.has('sort')) {
+      const raw = params.get('sort');
+      if (raw.endsWith('_desc')) { state.sortBy = raw.replace('_desc', ''); state.sortDir = 'desc'; }
+      else { state.sortBy = raw; state.sortDir = 'asc'; }
+    }
+    if (params.has('view')) {
+      const v = params.get('view');
+      if (['grid', 'list'].includes(v)) state.viewMode = v;
+    }
+    if (params.has('never_played')) state.filterNeverPlayed = true;
+    if (params.has('players')) state.filterPlayers = parseInt(params.get('players'), 10) || null;
+    if (params.has('time')) state.filterTime = parseInt(params.get('time'), 10) || null;
+    if (params.has('mechanics')) state.filterMechanics = params.get('mechanics').split(',').filter(Boolean);
+    if (params.has('categories')) state.filterCategories = params.get('categories').split(',').filter(Boolean);
+    if (params.has('location')) state.filterLocation = params.get('location') || null;
+  }
+
   // ===== State helpers =====
 
   function updateGameInState(gameId, updates) {
@@ -54,6 +99,241 @@
   let hoveredGame         = null;  // game card the mouse is currently over
   let activeModal         = null;  // { game, mode } when the game modal is open
   let _lastBulkClickedId  = null;  // game id last toggled in bulk mode, for shift+click range
+
+  // ===== Reminders =====
+  const REMINDER_DISMISS_KEY = 'cardboard_dismissed_reminders';
+  const REMINDER_COOLDOWN_DAYS = 7;
+
+  function getDismissedReminders() {
+    try { return JSON.parse(localStorage.getItem(REMINDER_DISMISS_KEY) || '{}'); }
+    catch (_) { return {}; }
+  }
+  function dismissReminder(gameId) {
+    const dismissed = getDismissedReminders();
+    dismissed[String(gameId)] = Date.now();
+    localStorage.setItem(REMINDER_DISMISS_KEY, JSON.stringify(dismissed));
+    const banner = document.getElementById('reminder-banner');
+    if (banner) banner.style.display = 'none';
+  }
+  function isReminderDismissed(gameId) {
+    const dismissed = getDismissedReminders();
+    const ts = dismissed[String(gameId)];
+    if (!ts) return false;
+    return (Date.now() - ts) < (REMINDER_COOLDOWN_DAYS * 24 * 60 * 60 * 1000);
+  }
+
+  // ===== Play This Next =====
+  const RECOMMEND_SKIP_KEY = 'cardboard_recommend_skips';
+
+  function getRecommendSkips() {
+    try { return JSON.parse(sessionStorage.getItem(RECOMMEND_SKIP_KEY) || '[]'); }
+    catch (_) { return []; }
+  }
+  function skipRecommend(gameId) {
+    const skips = getRecommendSkips();
+    if (!skips.includes(gameId)) skips.push(gameId);
+    sessionStorage.setItem(RECOMMEND_SKIP_KEY, JSON.stringify(skips));
+    loadRecommendCard();
+  }
+
+  // ===== Collection Health Action Plan =====
+  const ACTION_PLAN_KEY = 'cardboard_action_plan';
+
+  function getActionPlanCompleted() {
+    try { return JSON.parse(localStorage.getItem(ACTION_PLAN_KEY) || '{}'); }
+    catch (_) { return {}; }
+  }
+  function setActionPlanCompleted(taskId) {
+    const completed = getActionPlanCompleted();
+    const today = new Date().toISOString().slice(0, 10);
+    completed[taskId] = today;
+    localStorage.setItem(ACTION_PLAN_KEY, JSON.stringify(completed));
+  }
+  function isActionPlanCompletedToday(taskId) {
+    const completed = getActionPlanCompleted();
+    return completed[taskId] === new Date().toISOString().slice(0, 10);
+  }
+
+  function renderActionPlan() {
+    const container = document.getElementById('action-plan-card');
+    if (!container) return;
+    const cs = state.collectionStats;
+    if (!cs) { container.style.display = 'none'; return; }
+
+    const tasks = [];
+    const today = new Date().toISOString().slice(0, 10);
+
+    if (cs.play_pct !== undefined && cs.play_pct < 50 && cs.total_owned >= 5) {
+      const unplayed = state.games.filter(g => g.status === 'owned' && !g.session_count).slice(0, 1);
+      tasks.push({
+        id: 'play_unplayed',
+        title: `Play an unplayed game${unplayed.length ? ' — try <strong>' + escapeHtml(unplayed[0].name) + '</strong>' : ''}`,
+        action: () => { document.getElementById('filter-never-played')?.click(); },
+        actionLabel: 'Find One',
+      });
+    }
+
+    const missingImages = state.games.filter(g => g.status === 'owned' && !g.image_url).length;
+    if (missingImages > 0) {
+      tasks.push({
+        id: 'upload_images',
+        title: `Upload photos for <strong>${missingImages}</strong> missing image${missingImages !== 1 ? 's' : ''}`,
+        action: () => { showToast('Open a game and use the image upload in the edit modal', 'info'); },
+        actionLabel: 'How To',
+      });
+    }
+
+    const missingBgg = state.games.filter(g => !g.bgg_id).length;
+    if (missingBgg > 0) {
+      tasks.push({
+        id: 'link_bgg',
+        title: `Link <strong>${missingBgg}</strong> game${missingBgg !== 1 ? 's' : ''} to BoardGameGeek`,
+        action: () => { showToast('Edit a game and search BGG to link it', 'info'); },
+        actionLabel: 'How To',
+      });
+    }
+
+    const unratedRecent = state.games.filter(g => g.status === 'owned' && g.user_rating == null && g.session_count > 0).slice(0, 1);
+    if (unratedRecent.length) {
+      tasks.push({
+        id: 'rate_recent',
+        title: `Rate <strong>${escapeHtml(unratedRecent[0].name)}</strong> — you played it but haven't rated it`,
+        action: () => { openGameDetail(unratedRecent[0], 'edit'); },
+        actionLabel: 'Rate',
+      });
+    }
+
+    if (!tasks.length) {
+      container.innerHTML = `
+        <div class="action-plan-header">
+          <p class="action-plan-title">Collection Health</p>
+          <span class="action-plan-score">${cs.play_pct ?? 0}% played</span>
+        </div>
+        <p class="action-plan-empty">All caught up! Great job maintaining your collection.</p>`;
+      container.style.display = 'block';
+      return;
+    }
+
+    container.innerHTML = `
+      <div class="action-plan-header">
+        <p class="action-plan-title">Today's Tasks</p>
+        <span class="action-plan-score">${cs.play_pct ?? 0}% played</span>
+      </div>
+      <ul class="action-plan-list">
+        ${tasks.map(t => `
+          <li class="action-plan-item">
+            <input type="checkbox" id="ap-${t.id}" ${isActionPlanCompletedToday(t.id) ? 'checked' : ''}>
+            <label for="ap-${t.id}">${t.title}</label>
+            <button class="action-plan-do" data-ap-action="${t.id}">${t.actionLabel}</button>
+          </li>
+        `).join('')}
+      </ul>`;
+    container.style.display = 'block';
+
+    tasks.forEach(t => {
+      const cb = container.querySelector(`#ap-${t.id}`);
+      if (cb) {
+        cb.addEventListener('change', () => {
+          if (cb.checked) setActionPlanCompleted(t.id);
+        });
+      }
+      const btn = container.querySelector(`[data-ap-action="${t.id}"]`);
+      if (btn) btn.addEventListener('click', t.action);
+    });
+  }
+
+  async function loadRecommendCard() {
+    const container = document.getElementById('recommend-card');
+    if (!container) return;
+    const skips = getRecommendSkips();
+    const params = new URLSearchParams();
+    if (skips.length) params.set('exclude', skips.join(','));
+    if (state.filterPlayers !== null) params.set('players', String(state.filterPlayers));
+    if (state.filterTime !== null) params.set('minutes', String(state.filterTime));
+    try {
+      const rec = await API.recommend(params.toString());
+      if (!rec || !rec.game) { container.style.display = 'none'; return; }
+      const g = rec.game;
+      const thumb = g.image_url
+        ? `<img src="${escapeHtml(g.image_url)}" alt="" class="recommend-thumb" loading="lazy">`
+        : `<div class="recommend-thumb-placeholder"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="22" height="22"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></div>`;
+      container.innerHTML = `
+        ${thumb}
+        <div class="recommend-body">
+          <p class="recommend-title">${escapeHtml(g.name)}</p>
+          <p class="recommend-meta">${g.player_count ? escapeHtml(g.player_count) + ' players' : ''}${g.player_count && g.playtime ? ' \u2022 ' : ''}${g.playtime ? g.playtime + ' min' : ''}</p>
+          <p class="recommend-reason">${escapeHtml(rec.reason_detail)}</p>
+        </div>
+        <div class="recommend-actions">
+          <button class="recommend-btn" data-recommend-play="${g.id}">Play</button>
+          <button class="recommend-btn secondary" data-recommend-skip="${g.id}">Not Now</button>
+        </div>`;
+      container.style.display = 'flex';
+      container.querySelector('[data-recommend-play]')?.addEventListener('click', () => {
+        const game = state.games.find(x => x.id === g.id);
+        if (game) openGameDetail(game, 'log');
+      });
+      container.querySelector('[data-recommend-skip]')?.addEventListener('click', () => skipRecommend(g.id));
+    } catch (err) {
+      if (err.status !== 404) console.warn('Recommend load failed:', err);
+      container.style.display = 'none';
+    }
+  }
+
+  function renderReminderBanner() {
+    const banner = document.getElementById('reminder-banner');
+    if (!banner) return;
+    const cs = state.collectionStats;
+    if (!cs) { banner.style.display = 'none'; return; }
+
+    // Priority 1: neglected favorite
+    if (cs.neglected_favorite && !isReminderDismissed(cs.neglected_favorite.id)) {
+      const n = cs.neglected_favorite;
+      banner.innerHTML = `
+        <span class="reminder-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        </span>
+        <span class="reminder-text">
+          <strong>${escapeHtml(n.name)}</strong> hasn't been played in ${n.months_ago} month${n.months_ago !== 1 ? 's' : ''}.
+          It was your most-played game — dust it off?
+        </span>
+        <span class="reminder-actions">
+          <button class="reminder-btn primary" data-reminder-log="${n.id}">Log Session</button>
+          <button class="reminder-btn" data-reminder-dismiss="${n.id}">Dismiss</button>
+        </span>`;
+      banner.style.display = 'flex';
+      banner.querySelector('[data-reminder-log]')?.addEventListener('click', () => {
+        const game = state.games.find(g => g.id === n.id);
+        if (game) openGameDetail(game, 'log');
+      });
+      banner.querySelector('[data-reminder-dismiss]')?.addEventListener('click', () => dismissReminder(n.id));
+      return;
+    }
+
+    // Priority 2: low play %
+    if (cs.play_pct !== undefined && cs.play_pct < 50 && cs.total_owned >= 5 && !isReminderDismissed('_low_play_pct')) {
+      banner.innerHTML = `
+        <span class="reminder-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        </span>
+        <span class="reminder-text">
+          Only <strong>${cs.play_pct}%</strong> of your collection has been played.
+          Pick an unplayed game for your next session?
+        </span>
+        <span class="reminder-actions">
+          <button class="reminder-btn primary" data-reminder-never>Find One</button>
+          <button class="reminder-btn" data-reminder-dismiss="_low_play_pct">Dismiss</button>
+        </span>`;
+      banner.style.display = 'flex';
+      banner.querySelector('[data-reminder-never]')?.addEventListener('click', () => {
+        document.getElementById('filter-never-played')?.click();
+      });
+      banner.querySelector('[data-reminder-dismiss]')?.addEventListener('click', () => dismissReminder('_low_play_pct'));
+      return;
+    }
+
+    banner.style.display = 'none';
+  }
 
   // ===== Milestones =====
   const MILESTONE_STORAGE_KEY    = 'cardboard_milestones';
@@ -195,6 +475,7 @@
     bindThemeToggle();
     bindGameNightModal();
     bindPlayersModal();
+    bindExportModal();
     const shareBtn = document.getElementById('share-btn');
     if (shareBtn) shareBtn.addEventListener('click', openShareManageModal);
     // Check for unseen want-to-play requests and badge the share button
@@ -204,6 +485,7 @@
       _pendingBggHighlight = true;
       switchView('stats');
     });
+    loadFromUrlParams();
     syncCollectionUI();
     syncFilterActiveBar();
     // Load players for autocomplete (non-blocking)
@@ -228,6 +510,26 @@
     const initialView = location.hash.replace('#', '') || 'collection';
     const validViews = ['collection', 'add', 'stats'];
     switchView(validViews.includes(initialView) ? initialView : 'collection');
+
+    // Deep-link into a game modal after collection loads
+    const _gameIdParam = new URLSearchParams(location.search).get('game');
+    if (_gameIdParam && initialView === 'collection') {
+      const _gameId = parseInt(_gameIdParam, 10);
+      if (!isNaN(_gameId)) {
+        const _openWhenReady = () => {
+          const g = state.games.find(x => x.id === _gameId);
+          if (g) { openGameDetail(g); }
+          else if (state.serverTotal > 0 && state.games.length >= state.serverTotal) {
+            // Game not found in loaded collection
+            return;
+          } else {
+            // Wait for more pages to load
+            setTimeout(_openWhenReady, 500);
+          }
+        };
+        setTimeout(_openWhenReady, 500);
+      }
+    }
 
     // Animated search placeholder
     const _searchInput = document.getElementById('collection-search');
@@ -329,6 +631,7 @@
       clearBtn.style.display = state.search ? 'flex' : 'none';
       clearBulkSelection();
       saveCollectionPrefs();
+      syncUrlParams();
       debouncedSearchLoad();
     });
 
@@ -338,6 +641,7 @@
       clearBtn.style.display = 'none';
       clearBulkSelection();
       saveCollectionPrefs();
+      syncUrlParams();
       loadCollection();
     });
 
@@ -453,6 +757,7 @@
         sortDirBtn.querySelector('svg').style.transform = 'scaleY(-1)';
       }
       saveCollectionPrefs();
+      syncUrlParams();
       loadCollection();
     });
 
@@ -462,6 +767,7 @@
       sortDirBtn.setAttribute('data-tooltip', state.sortDir === 'asc' ? 'Sort ascending' : 'Sort descending');
       sortDirBtn.querySelector('svg').style.transform = state.sortDir === 'desc' ? 'scaleY(-1)' : '';
       saveCollectionPrefs();
+      syncUrlParams();
       loadCollection();
     });
 
@@ -470,6 +776,7 @@
       gridBtn.classList.add('active');
       listBtn.classList.remove('active');
       saveCollectionPrefs();
+      syncUrlParams();
       renderCollection();
     });
 
@@ -478,6 +785,7 @@
       listBtn.classList.add('active');
       gridBtn.classList.remove('active');
       saveCollectionPrefs();
+      syncUrlParams();
       renderCollection();
     });
 
@@ -488,6 +796,7 @@
         expansionsBtn.classList.toggle('active', state.showExpansions);
         expansionsBtn.setAttribute('aria-pressed', state.showExpansions);
         expansionsBtn.setAttribute('data-tooltip', state.showExpansions ? 'Hide expansions' : 'Show expansions');
+        syncUrlParams();
         loadCollection();
       });
     }
@@ -632,6 +941,9 @@
       if (collectionStats !== null) state.collectionStats = collectionStats;
       buildDataLists();
       renderCollection();
+      renderReminderBanner();
+      loadRecommendCard();
+      renderActionPlan();
       maybeStartTour();
       _maybeShowWeeklySummary();
     } catch (err) {
@@ -665,10 +977,13 @@
         <option value="sold">Sold</option>
       </select>
       <div class="bulk-label-group">
-        <input type="text" class="form-input bulk-label-input" id="bulk-label-input" placeholder="Add label…" autocomplete="off" list="bulk-label-list">
+        <input type="text" class="form-input bulk-label-input" id="bulk-label-input" placeholder="Add / remove label…" autocomplete="off" list="bulk-label-list">
         <datalist id="bulk-label-list">${[...new Set(state.games.flatMap(g => { try { return JSON.parse(g.labels || '[]'); } catch (err) { console.warn(`Failed to parse labels for game ${g.id}:`, err); return []; } }))].map(l => `<option value="${escapeHtml(l)}">`).join('')}</datalist>
-        <button class="btn btn-secondary btn-sm" id="bulk-label-btn">Apply Label</button>
+        <button class="btn btn-secondary btn-sm" id="bulk-label-btn">Add</button>
+        <button class="btn btn-secondary btn-sm" id="bulk-unlabel-btn">Remove</button>
       </div>
+      <button class="btn btn-secondary btn-sm" id="bulk-log-session-btn">Log Session</button>
+      <button class="btn btn-secondary btn-sm" id="bulk-refresh-bgg-btn">Refresh BGG</button>
       <button class="btn btn-secondary btn-sm" id="bulk-select-all-btn">Select All</button>
       <button class="btn btn-danger btn-sm" id="bulk-delete-btn">Delete</button>
       <button class="btn btn-secondary btn-sm" id="bulk-deselect-btn">Deselect All</button>
@@ -683,6 +998,13 @@
       if (!label) return;
       await handleBulkAddLabel(label);
     });
+    toolbar.querySelector('#bulk-unlabel-btn').addEventListener('click', async () => {
+      const label = toolbar.querySelector('#bulk-label-input').value.trim();
+      if (!label) return;
+      await handleBulkRemoveLabel(label);
+    });
+    toolbar.querySelector('#bulk-log-session-btn').addEventListener('click', openBulkSessionModal);
+    toolbar.querySelector('#bulk-refresh-bgg-btn').addEventListener('click', handleBulkRefreshBgg);
     const selectAllBtn = toolbar.querySelector('#bulk-select-all-btn');
     selectAllBtn.textContent = state.selectedGameIds.size === state.games.length ? 'Deselect All' : 'Select All';
     selectAllBtn.addEventListener('click', () => {
@@ -741,6 +1063,100 @@
       },
       n => `Label "${label}" added to ${pluralize(n, 'game')}`,
     );
+  }
+
+  async function handleBulkRemoveLabel(label) {
+    const ids = [...state.selectedGameIds];
+    const gameById = Object.fromEntries(state.games.map(g => [g.id, g]));
+    await _executeBulkUpdate(
+      ids,
+      id => {
+        const game = gameById[id];
+        let labels = [];
+        try { labels = JSON.parse(game?.labels || '[]'); } catch (err) { console.warn(`Failed to parse labels for game ${game?.id}:`, err); labels = []; }
+        labels = labels.filter(l => l !== label);
+        return API.updateGame(id, { labels: JSON.stringify(labels) });
+      },
+      n => `Label "${label}" removed from ${pluralize(n, 'game')}`,
+    );
+  }
+
+  async function openBulkSessionModal() {
+    const ids = [...state.selectedGameIds];
+    if (!ids.length) return;
+    const modal = document.getElementById('game-modal');
+    const inner = document.getElementById('game-modal-inner');
+    inner.innerHTML = `
+      <div class="modal-content-panel">
+        <div class="modal-panel-header">
+          <h2>Log Session for ${ids.length} Games</h2>
+          <button class="modal-close" id="bulk-session-close" aria-label="Close">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="18" height="18"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+        <div class="modal-body">
+          <div class="form-grid">
+            <div class="form-group">
+              <label class="form-label" for="bs-date">Date</label>
+              <input type="date" id="bs-date" class="form-input" value="${new Date().toISOString().slice(0,10)}">
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="bs-duration">Duration (min)</label>
+              <input type="number" id="bs-duration" class="form-input" min="1" placeholder="Optional">
+            </div>
+          </div>
+          <div class="form-group" style="margin-top:12px">
+            <label class="form-label" for="bs-notes">Notes</label>
+            <textarea id="bs-notes" class="form-textarea" rows="2" placeholder="Optional"></textarea>
+          </div>
+          <button class="btn btn-primary" id="bs-submit" style="margin-top:16px;width:100%">Log Session</button>
+        </div>
+      </div>`;
+    modal.style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+    requestAnimationFrame(() => modal.classList.add('open'));
+    inner.querySelector('#bulk-session-close').addEventListener('click', () => {
+      modal.classList.remove('open');
+      setTimeout(() => { modal.style.display = 'none'; document.body.style.overflow = ''; }, 200);
+    });
+    inner.querySelector('#bs-submit').addEventListener('click', async () => {
+      const body = {
+        game_ids: ids,
+        played_at: document.getElementById('bs-date').value,
+        duration_minutes: parseInt(document.getElementById('bs-duration').value, 10) || undefined,
+        notes: document.getElementById('bs-notes').value.trim() || undefined,
+      };
+      try {
+        await API.bulkSession(body);
+        showToast(`Session logged for ${pluralize(ids.length, 'game')}`, 'success');
+        state.selectedGameIds.clear();
+        loadCollection();
+        modal.classList.remove('open');
+        setTimeout(() => { modal.style.display = 'none'; document.body.style.overflow = ''; }, 200);
+        renderBulkToolbar();
+      } catch (err) {
+        showToast(classifyError(err), 'error');
+      }
+    });
+  }
+
+  async function handleBulkRefreshBgg() {
+    const ids = [...state.selectedGameIds];
+    let done = 0, failed = 0;
+    for (const id of ids) {
+      try {
+        await API.refreshFromBGG(id);
+        done++;
+      } catch (err) {
+        failed++;
+        console.warn(`BGG refresh failed for game ${id}:`, err);
+      }
+    }
+    if (done > 0) loadCollection();
+    const msg = failed > 0 ? `${done} refreshed · ${failed} failed` : `${pluralize(done, 'game')} refreshed from BGG`;
+    showToast(msg, failed > 0 ? 'error' : 'success');
+    state.selectedGameIds.clear();
+    renderBulkToolbar();
   }
 
   async function handleBulkDelete() {
@@ -2137,6 +2553,9 @@
         e.preventDefault();
         const searchEl = document.getElementById('collection-search');
         if (searchEl) searchEl.focus();
+      } else if (e.key === 'r' || e.key === 'R') {
+        e.preventDefault();
+        loadRecommendCard();
       }
     });
   }
@@ -2160,6 +2579,54 @@
     const btn = document.getElementById('players-btn');
     if (!btn) return;
     btn.addEventListener('click', openPlayersModal);
+  }
+
+  function bindExportModal() {
+    const btn = document.getElementById('export-btn');
+    if (!btn) return;
+    btn.addEventListener('click', openExportModal);
+  }
+
+  function openExportModal() {
+    const modal = document.getElementById('game-modal');
+    const inner = document.getElementById('game-modal-inner');
+    inner.innerHTML = `
+      <div class="modal-content-panel">
+        <div class="modal-panel-header">
+          <h2>Export Data</h2>
+          <button class="modal-close" id="export-modal-close" aria-label="Close">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="18" height="18"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+        <div class="modal-body">
+          <p style="color:var(--text-2);font-size:0.85rem;margin-bottom:12px">Download your collection, sessions, and players in standard formats.</p>
+          <div class="form-group" style="margin-bottom:10px">
+            <button class="btn btn-secondary" id="export-json-btn" style="width:100%">Export as JSON</button>
+          </div>
+          <div class="form-group" style="margin-bottom:10px">
+            <button class="btn btn-secondary" id="export-csv-btn" style="width:100%">Export as CSV</button>
+          </div>
+          <div class="form-group">
+            <button class="btn btn-secondary" id="export-images-btn" style="width:100%">Export Images (ZIP)</button>
+          </div>
+        </div>
+      </div>`;
+    modal.style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+    requestAnimationFrame(() => modal.classList.add('open'));
+    inner.querySelector('#export-modal-close').addEventListener('click', () => {
+      modal.classList.remove('open');
+      setTimeout(() => { modal.style.display = 'none'; document.body.style.overflow = ''; }, 200);
+    });
+    inner.querySelector('#export-json-btn').addEventListener('click', () => {
+      window.open('/api/games/export/json', '_blank');
+    });
+    inner.querySelector('#export-csv-btn').addEventListener('click', () => {
+      window.open('/api/games/export/csv', '_blank');
+    });
+    inner.querySelector('#export-images-btn').addEventListener('click', () => {
+      window.open('/api/games/export/images', '_blank');
+    });
   }
 
   async function openPlayersModal() {
@@ -2780,6 +3247,7 @@
       { key: 'N',   desc: 'Add a new game' },
       { key: 'S',   desc: 'Focus the search bar' },
       { key: 'E',   desc: 'Edit hovered or open game' },
+      { key: 'R',   desc: 'Refresh "Play This Next" recommendation' },
       { key: '/',   desc: 'Focus the search bar (anywhere)' },
       { key: '← / →', desc: 'Navigate between games in modal' },
       { key: 'Esc', desc: 'Close modal or overlay' },
@@ -3065,15 +3533,44 @@
         return;
       }
 
-      // Duplicate detection: check local state for same name (case-insensitive)
-      const nameLower = payload.name.toLowerCase();
-      const dup = state.games.find(g => g.name.toLowerCase() === nameLower);
-      if (dup) {
-        const proceed = await showConfirm(
-          'Possible Duplicate',
-          `"${dup.name}" is already in your collection. Add it again anyway?`
-        );
-        if (!proceed) return;
+      // Duplicate / expansion guard: check backend for exact, similar, or same BGG ID
+      try {
+        const dupCheck = await API.checkDuplicate(payload.name, payload.bgg_id);
+        if (dupCheck.duplicates && dupCheck.duplicates.length > 0) {
+          const dups = dupCheck.duplicates;
+          const exact = dups.find(d => d.reason === 'exact_name');
+          const sameBgg = dups.find(d => d.reason === 'same_bgg_id');
+          const similar = dups.find(d => d.reason === 'similar_name');
+          const expansion = dups.find(d => d.reason === 'possible_expansion');
+          let title = 'Possible Duplicate';
+          let msg = '';
+          if (exact) {
+            title = 'Exact Duplicate Found';
+            msg = `"${exact.name}" is already in your collection (${exact.status}). Add it again anyway?`;
+          } else if (sameBgg) {
+            title = 'Same BGG ID Found';
+            msg = `"${sameBgg.name}" shares the same BGG ID. Add it again anyway?`;
+          } else if (expansion) {
+            title = 'Possible Expansion';
+            msg = `"${expansion.name}" looks like it might be an expansion or related game. Add it anyway?`;
+          } else if (similar) {
+            title = 'Similar Game Found';
+            msg = `"${similar.name}" is very similar. Add it anyway?`;
+          }
+          const proceed = await showConfirm(title, msg);
+          if (!proceed) return;
+        }
+      } catch (dupErr) {
+        // API unavailable — fall back to a local exact-name check
+        const nameLower = payload.name.toLowerCase();
+        const localDup = state.games.find(g => g.name.toLowerCase() === nameLower);
+        if (localDup) {
+          const proceed = await showConfirm(
+            'Possible Duplicate',
+            `"${localDup.name}" is already in your collection. Add it again anyway?`
+          );
+          if (!proceed) return;
+        }
       }
 
       try {
@@ -3177,6 +3674,7 @@
         document.querySelectorAll('#status-pills .pill').forEach(p => p.classList.remove('active'));
         btn.classList.add('active');
         saveCollectionPrefs();
+        syncUrlParams();
         clearBulkSelection();
         loadCollection();
       });
@@ -3208,14 +3706,12 @@
           }
           clearBulkSelection();
           saveCollectionPrefs();
+          syncUrlParams();
           scheduleFilteredLoad();
         });
-        container.appendChild(btn);
       });
     }
 
-    // Location chips are single-select, driven by the collection-wide location
-    // map so all rooms stay visible while a filter is active.
     function buildLocationChips(container) {
       container.innerHTML = '';
       const locs = (state.collectionStats && state.collectionStats.locations) || {};
@@ -3239,6 +3735,7 @@
           if (becomingActive) btn.classList.add('active');
           clearBulkSelection();
           saveCollectionPrefs();
+          syncUrlParams();
           scheduleFilteredLoad();
           syncFilterActiveBar();
         });
@@ -3290,6 +3787,7 @@
       neverBtn.classList.toggle('active', state.filterNeverPlayed);
       clearBulkSelection();
       saveCollectionPrefs();
+      syncUrlParams();
       scheduleFilteredLoad();
     });
 
@@ -3301,6 +3799,7 @@
         state.filterPlayers = playersEl.value ? parseInt(playersEl.value, 10) : null;
         clearBulkSelection();
         saveCollectionPrefs();
+        syncUrlParams();
         scheduleFilteredLoad();
       }, 300);
     });
@@ -3311,6 +3810,7 @@
         state.filterTime = timeEl.value ? parseInt(timeEl.value, 10) : null;
         clearBulkSelection();
         saveCollectionPrefs();
+        syncUrlParams();
         scheduleFilteredLoad();
       }, 300);
     });
@@ -3330,6 +3830,7 @@
         .forEach(el => el.classList.remove('active'));
       panel.classList.remove('open');
       clearBulkSelection();
+      syncUrlParams();
       loadCollection();
       syncFilterActiveBar();
     });
@@ -3337,6 +3838,18 @@
     // Wire the filter active bar clear button
     document.getElementById('filter-active-clear')?.addEventListener('click', () => {
       clearBtn.click();
+    });
+
+    // Share filtered link button
+    document.getElementById('filter-active-share')?.addEventListener('click', () => {
+      const url = location.href;
+      if (navigator.share) {
+        navigator.share({ title: 'Cardboard Collection', url }).catch(() => {});
+      } else if (navigator.clipboard) {
+        navigator.clipboard.writeText(url)
+          .then(() => showToast('Filtered link copied to clipboard', 'info'))
+          .catch(() => showToast('Could not copy link', 'error'));
+      }
     });
 
     // Sync bar whenever filter inputs change
@@ -3363,6 +3876,10 @@
     const backdrop = document.getElementById('game-night-backdrop');
     const prevFocus = document.activeElement;
 
+    const playerOptions = (state.playerObjects || []).map(p =>
+      `<label class="gn-player-chip"><input type="checkbox" value="${p.id}" data-gn-player>${escapeHtml(p.name)}</label>`
+    ).join('');
+
     inner.innerHTML = `
       <div class="modal-content-panel">
         <div class="modal-panel-header">
@@ -3372,9 +3889,9 @@
           </button>
         </div>
         <div class="modal-body">
-          <div class="form-grid" style="margin-bottom:16px">
+          <div class="form-grid" style="margin-bottom:12px">
             <div class="form-group">
-              <label class="form-label" for="gn-players">Players</label>
+              <label class="form-label" for="gn-players">Player count</label>
               <input type="number" id="gn-players" class="form-input" min="1" max="20" placeholder="Any" value="${state.filterPlayers || ''}" autocomplete="off">
             </div>
             <div class="form-group">
@@ -3382,6 +3899,7 @@
               <input type="number" id="gn-time" class="form-input" min="1" placeholder="Any" value="${state.filterTime || ''}" autocomplete="off">
             </div>
           </div>
+          ${playerOptions ? `<div class="gn-player-select" style="margin-bottom:12px"><div class="form-label" style="margin-bottom:6px">Or pick players</div><div class="gn-player-chips">${playerOptions}</div></div>` : ''}
           <button class="btn btn-primary" id="gn-suggest-btn" style="width:100%">Suggest Games</button>
           <div id="gn-results"></div>
         </div>
@@ -3423,10 +3941,12 @@
     inner.querySelector('#gn-suggest-btn').addEventListener('click', async () => {
       const playerCount = parseInt(inner.querySelector('#gn-players').value, 10) || null;
       const maxMinutes  = parseInt(inner.querySelector('#gn-time').value, 10) || null;
+      const selectedPlayerIds = [...inner.querySelectorAll('[data-gn-player]:checked')].map(cb => +cb.value);
       const resultsEl   = inner.querySelector('#gn-results');
       const btn         = inner.querySelector('#gn-suggest-btn');
       const dismissedIds = new Set();
       let allSuggestions = [];
+      const useGroupRecommend = selectedPlayerIds.length > 0;
 
       function renderResults(suggestions) {
         const visible = suggestions.filter(s => !dismissedIds.has(s.id));
@@ -3442,7 +3962,8 @@
           return;
         }
         const activeChips = [];
-        if (playerCount) activeChips.push(`👥 ${playerCount} players`);
+        if (useGroupRecommend) activeChips.push(`👥 ${selectedPlayerIds.length} players`);
+        else if (playerCount) activeChips.push(`👥 ${playerCount} players`);
         if (maxMinutes) activeChips.push(`⏱ ≤ ${maxMinutes} min`);
         const filterChipsHtml = activeChips.length
           ? `<div class="gn-active-filters">${activeChips.map(c => `<span class="reason-chip">${escapeHtml(c)}</span>`).join('')}</div>`
@@ -3461,7 +3982,7 @@
                 ${s.difficulty ? `<span>Difficulty ${+s.difficulty.toFixed(2)}</span>` : ''}
                 ${s.user_rating ? `<span>★ ${s.user_rating.toFixed(1)}</span>` : ''}
               </div>
-              <div class="game-night-reasons">${s.reasons.map(r => `<span class="reason-chip">${escapeHtml(r)}</span>`).join('')}</div>
+              <div class="game-night-reasons">${(s.reasons || [s.reason]).filter(Boolean).map(r => `<span class="reason-chip">${escapeHtml(r)}</span>`).join('')}</div>
             </div>
             <button class="gn-dismiss-btn" data-game-id="${s.id}" aria-label="Not interested in ${escapeHtml(s.name)}" title="Not interested">
               <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><line x1="4" y1="4" x2="12" y2="12"/><line x1="12" y1="4" x2="4" y2="12"/></svg>
@@ -3501,10 +4022,17 @@
 
       async function fetchAndRender() {
         try {
-          const [suggestions] = await Promise.all([
-            API.suggestGames(playerCount, maxMinutes),
-            new Promise(r => setTimeout(r, 800))
-          ]);
+          let suggestions;
+          if (useGroupRecommend) {
+            const resp = await API.groupRecommend(selectedPlayerIds, maxMinutes, null);
+            suggestions = (resp.recommendations || []).map(r => ({
+              ...r.game,
+              reasons: [r.reason],
+              reason: r.reason,
+            }));
+          } else {
+            suggestions = await API.suggestGames(playerCount, maxMinutes);
+          }
           allSuggestions = suggestions;
           if (!allSuggestions.length) {
             resultsEl.innerHTML = '<p class="game-night-empty">No matching games found. Try adjusting the filters.</p>';
@@ -3535,13 +4063,13 @@
     show_sessions_by_month: true, show_play_heatmap: true,
     show_sessions_by_dow: true, show_never_played: true,
     show_dormant: true, show_top_mechanics: true, show_collection_value: true,
-    show_milestones: true, show_goals: true, show_cooling_off: true,
+    show_milestones: true, show_goals: true, show_cooling_off: true, show_trade_sell: true,
     added_by_month_include_wishlist: true,
     section_order: ['summary', 'most_played', 'top_players', 'recently_played', 'recently_added',
                     'ratings', 'labels', 'added_by_month', 'sessions_by_month', 'play_heatmap',
                     'sessions_by_dow',
                     'never_played', 'cooling_off', 'dormant', 'top_mechanics', 'collection_value',
-                    'milestones', 'goals'],
+                    'trade_sell', 'milestones', 'goals'],
   };
 
   function loadStatsPrefs() {
