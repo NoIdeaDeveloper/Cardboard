@@ -162,10 +162,10 @@ async def upload_player_avatar(
 
     player.avatar_ext = ext
     player.avatar_preset = None  # custom upload supersedes any preset
-    db.commit()
 
     dest = _avatar_path(player)
     safe_write_file(dest, content, f"Avatar write failed for player {player_id}", "Failed to save avatar")
+    db.commit()
 
     logger.info("Avatar uploaded for player id=%d ext=%s", player_id, ext)
     cnt = (

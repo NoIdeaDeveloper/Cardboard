@@ -254,7 +254,7 @@
       const rec = await API.recommend(params.toString());
       if (!rec || !rec.game) { container.style.display = 'none'; return; }
       const g = rec.game;
-      const thumb = g.image_url
+      const thumb = isSafeUrl(g.image_url)
         ? `<img src="${escapeHtml(g.image_url)}" alt="" class="recommend-thumb" loading="lazy">`
         : `<div class="recommend-thumb-placeholder"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="22" height="22"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></div>`;
       container.innerHTML = `
@@ -434,7 +434,7 @@
     if (sortDirBtn) {
       sortDirBtn.dataset.dir = state.sortDir;
       sortDirBtn.setAttribute('data-tooltip', state.sortDir === 'asc' ? 'Sort ascending' : 'Sort descending');
-      sortDirBtn.querySelector('svg').style.transform = state.sortDir === 'desc' ? 'scaleY(-1)' : '';
+      sortDirBtn.querySelector('svg')?.style.transform = state.sortDir === 'desc' ? 'scaleY(-1)' : '';
     }
 
     if (gridBtn) gridBtn.classList.toggle('active', state.viewMode === 'grid');
@@ -520,13 +520,14 @@
           const g = state.games.find(x => x.id === _gameId);
           if (g) { openGameDetail(g); }
           else if (state.serverTotal > 0 && state.games.length >= state.serverTotal) {
-            // Game not found in loaded collection
             return;
           } else {
-            // Wait for more pages to load
+            tries = tries - 1;
+            if (tries <= 0) return;
             setTimeout(_openWhenReady, 500);
           }
         };
+        let tries = 40;
         setTimeout(_openWhenReady, 500);
       }
     }
@@ -591,7 +592,11 @@
   }
 
   function switchView(view) {
-    if (view !== 'collection') clearBulkSelection();
+    if (view !== 'collection') {
+      clearBulkSelection();
+      _virtualPageObserver?.disconnect();
+      _virtualPageObserver = null;
+    }
     if (_addGamePreviewBlobUrl) { URL.revokeObjectURL(_addGamePreviewBlobUrl); _addGamePreviewBlobUrl = null; }
     document.querySelectorAll('.view').forEach(el => el.classList.remove('active'));
     document.querySelectorAll('[data-view]').forEach(btn => btn.classList.remove('active'));
@@ -752,9 +757,12 @@
       // "Hot" is meaningless ascending — auto-flip to desc
       if (sortBy.value === 'heat_level' && state.sortDir !== 'desc') {
         state.sortDir = 'desc';
-        sortDirBtn.dataset.dir = 'desc';
-        sortDirBtn.setAttribute('data-tooltip', 'Sort descending');
-        sortDirBtn.querySelector('svg').style.transform = 'scaleY(-1)';
+        if (sortDirBtn) {
+          sortDirBtn.dataset.dir = 'desc';
+          sortDirBtn.setAttribute('data-tooltip', 'Sort descending');
+          const svg = sortDirBtn.querySelector('svg');
+          if (svg) svg.style.transform = 'scaleY(-1)';
+        }
       }
       saveCollectionPrefs();
       syncUrlParams();
@@ -765,7 +773,7 @@
       state.sortDir = state.sortDir === 'asc' ? 'desc' : 'asc';
       sortDirBtn.dataset.dir = state.sortDir;
       sortDirBtn.setAttribute('data-tooltip', state.sortDir === 'asc' ? 'Sort ascending' : 'Sort descending');
-      sortDirBtn.querySelector('svg').style.transform = state.sortDir === 'desc' ? 'scaleY(-1)' : '';
+      sortDirBtn.querySelector('svg')?.style.transform = state.sortDir === 'desc' ? 'scaleY(-1)' : '';
       saveCollectionPrefs();
       syncUrlParams();
       loadCollection();
@@ -1399,7 +1407,7 @@
             : null;
           const dateLabel = daysAgo === null ? '' : daysAgo === 0 ? 'Today' : daysAgo === 1 ? 'Yesterday' : `${daysAgo}d ago`;
           return `<div class="recently-played-card" data-game-id="${g.id}" tabindex="0" title="${escapeHtml(g.name)}">
-            ${g.image_url
+            ${isSafeUrl(g.image_url)
               ? `<img src="${escapeHtml(g.image_url)}" alt="" loading="lazy">`
               : `<div class="recently-played-placeholder"></div>`}
             <div class="recently-played-name">${escapeHtml(g.name)}</div>
@@ -1581,7 +1589,7 @@
       banner.innerHTML = `<span class="wishlist-banner-stat"><strong>${filtered.length}</strong> ${filtered.length === 1 ? 'game' : 'games'} wanted</span>`
         + (totalTarget > 0 ? `<span class="wishlist-banner-stat">Target total: <strong>$${totalTarget.toFixed(2)}</strong></span>` : '')
         + (priorityCount > 0 ? `<span class="wishlist-banner-stat"><strong>${priorityCount}</strong> prioritized</span>` : '');
-      container.parentNode.insertBefore(banner, container);
+      if (container.parentNode) container.parentNode.insertBefore(banner, container);
     }
 
     container.className = state.viewMode === 'grid' ? 'games-grid' : 'games-list';
@@ -3972,7 +3980,7 @@
         resultsEl.innerHTML = filterChipsHtml + visible.map((s, i) => `
           <div class="game-night-item${i === 0 ? ' gn-top-pick' : ''}" data-game-id="${s.id}" role="button" tabindex="0" aria-label="${escapeHtml(s.name)}">
             <div class="game-night-thumb">
-              ${s.image_url ? `<img src="${escapeHtml(s.image_url)}" alt="" loading="lazy">` : placeholderSvg()}
+              ${isSafeUrl(s.image_url) ? `<img src="${escapeHtml(s.image_url)}" alt="" loading="lazy">` : placeholderSvg()}
             </div>
             <div class="game-night-info">
               <div class="game-night-name">${escapeHtml(s.name)}</div>
@@ -4190,6 +4198,7 @@
     sectionsGrid.querySelectorAll('.stats-section').forEach(section => {
       const key = section.dataset.section;
       if (!key) return;
+      if (section.hasAttribute('data-has-handle')) return;
       section.setAttribute('draggable', 'true');
 
       // Add drag handle

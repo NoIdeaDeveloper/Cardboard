@@ -463,7 +463,7 @@ function buildModalContent(game, sessions, onSave, onDelete, onAddSession, onDel
         <div class="section-label">Cover Image</div>
         <div class="image-edit-area">
           <div class="image-edit-preview" id="edit-cover-preview">
-            ${game.image_url
+            ${isSafeUrl(game.image_url)
               ? `<img src="${escapeHtml(game.image_url)}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:var(--radius-sm)">`
               : '<span class="image-edit-empty">No image</span>'}
           </div>
@@ -794,7 +794,7 @@ function buildModalContent(game, sessions, onSave, onDelete, onAddSession, onDel
 
   // ===== Wire events =====
 
-  el.querySelector('.modal-close').addEventListener('click', (e) => { e.stopPropagation(); onCloseModal(); });
+  el.querySelector('.modal-close')?.addEventListener('click', (e) => { e.stopPropagation(); onCloseModal(); });
   const stickyClose = el.querySelector('.modal-close-sticky-btn');
   if (stickyClose) stickyClose.addEventListener('click', (e) => { e.stopPropagation(); onCloseModal(); });
   if (navInfo) {

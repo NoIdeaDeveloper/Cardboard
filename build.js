@@ -46,7 +46,7 @@ async function main() {
   let html = fs.readFileSync(path.join(SRC, 'index.html'), 'utf8');
   html = html
     .replace('href="css/style.css"', `href="css/${cssFile}"`)
-    .replace(/[ \t]*<script src="js\/(shared-utils|theme|ui-helpers|api|ui|confetti)\.js"><\/script>\n/g, '')
+    .replace(/[ \t]*<script src="js\/(shared-utils|theme|ui-helpers|api|ui|confetti)\.js"><\/script>\r?\n/g, '')
     .replace('  <script src="js/app.js"></script>', `  <script src="js/${jsFile}"></script>`);
   fs.writeFileSync(path.join(DIST, 'index.html'), html);
 

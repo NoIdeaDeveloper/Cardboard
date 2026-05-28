@@ -94,29 +94,26 @@ def submit_want_to_play(
     game = get_game_or_404(game_id, db)
     if game.share_hidden:
         raise HTTPException(status_code=404, detail="Game not found")
-    req = models.WantToPlayRequest(
-        token=token,
-        game_id=game_id,
-        visitor_name=data.visitor_name.strip() if data.visitor_name else None,
-        message=data.message.strip() if data.message else None,
-    )
-    db.add(req)
-    db.flush()  # Write within transaction so the count below is accurate
-    # Rate-limit: max 3 requests per (token, game_id, visitor_name) — checked after
-    # flush so concurrent inserts are counted correctly within the same transaction.
+    vname = data.visitor_name.strip() if data.visitor_name else None
     total_count = (
         db.query(func.count())
         .select_from(models.WantToPlayRequest)
         .filter(
             models.WantToPlayRequest.token == token,
             models.WantToPlayRequest.game_id == game_id,
-            models.WantToPlayRequest.visitor_name == (data.visitor_name or None),
+            models.WantToPlayRequest.visitor_name == vname,
         )
         .scalar()
     )
-    if total_count > 3:
-        db.rollback()
+    if total_count >= 3:
         raise HTTPException(status_code=429, detail="Too many requests for this game")
+    req = models.WantToPlayRequest(
+        token=token,
+        game_id=game_id,
+        visitor_name=vname,
+        message=data.message.strip() if data.message else None,
+    )
+    db.add(req)
     db.commit()
     logger.info("Want-to-play request: game_id=%d visitor=%r", game_id, req.visitor_name)
     return {"detail": "Request submitted"}

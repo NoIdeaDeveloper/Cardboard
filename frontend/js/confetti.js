@@ -1,6 +1,8 @@
 let _confettiCanvas = null;
+let _confettiRafId = null;
 
 function launchConfetti() {
+  if (_confettiRafId) { cancelAnimationFrame(_confettiRafId); _confettiRafId = null; }
   if (_confettiCanvas) { _confettiCanvas.remove(); _confettiCanvas = null; }
 
   const canvas = document.createElement('canvas');
@@ -47,12 +49,13 @@ function launchConfetti() {
       ctx.restore();
     }
     if (elapsed < DURATION) {
-      requestAnimationFrame(draw);
+      _confettiRafId = requestAnimationFrame(draw);
     } else {
       _confettiCanvas = null;
+      _confettiRafId = null;
       canvas.remove();
     }
   }
 
-  requestAnimationFrame(draw);
+  _confettiRafId = requestAnimationFrame(draw);
 }

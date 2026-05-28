@@ -37,6 +37,17 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
             type=raw,value=latest
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install test dependencies
+        run: pip install -r backend/requirements.txt -r backend/requirements-dev.txt
+
+      - name: Run tests
+        run: cd backend && python -m pytest
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 

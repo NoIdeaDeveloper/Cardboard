@@ -315,7 +315,7 @@ class GoalCreate(BaseModel):
     type: str
     target_value: int = Field(..., ge=1)
     game_id: Optional[int] = None
-    year: Optional[int] = None
+    year: Optional[int] = Field(None, ge=1970, le=2099)
 
     @field_validator('type')
     @classmethod

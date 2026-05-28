@@ -317,16 +317,17 @@ def test_bgg_rate_limiter_returns_429_after_limit(client):
     import routers.games as _gmod
     _gmod._bgg_buckets.clear()
 
-    statuses = []
-    for i in range(10):
+    try:
+        statuses = []
+        for i in range(10):
+            r = client.get("/api/games/bgg-search?q=test")
+            statuses.append(r.status_code)
+
+        assert all(s != 429 for s in statuses), (
+            f"Rate limit triggered prematurely on request #{statuses.index(429)+1}"
+        )
+
         r = client.get("/api/games/bgg-search?q=test")
-        statuses.append(r.status_code)
-
-    assert all(s != 429 for s in statuses), (
-        f"Rate limit triggered prematurely on request #{statuses.index(429)+1}"
-    )
-
-    r = client.get("/api/games/bgg-search?q=test")
-    assert r.status_code == 429, f"Expected 429, got {r.status_code}: {r.text}"
-
-    _gmod._bgg_buckets.clear()
+        assert r.status_code == 429, f"Expected 429, got {r.status_code}: {r.text}"
+    finally:
+        _gmod._bgg_buckets.clear()

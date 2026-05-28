@@ -145,12 +145,11 @@ def list_goals(db: Session = Depends(get_db)):
     results = []
     for goal in goals:
         current = _compute_current_value(goal, db)
-        # Auto-complete if newly reached
         if not goal.is_complete and current >= goal.target_value:
             goal.is_complete = True
             goal.completed_at = datetime.now(timezone.utc)
-            db.commit()
         results.append(_build_response(goal, current, game_names.get(goal.game_id)))
+    db.commit()
     return results
 
 

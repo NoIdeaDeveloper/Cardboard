@@ -6,6 +6,7 @@ import mimetypes
 import os
 import socket
 import urllib.parse
+import urllib.request
 from typing import TYPE_CHECKING, List, Tuple, Optional, Set
 
 from fastapi import HTTPException
@@ -20,14 +21,16 @@ if TYPE_CHECKING:
 
 
 def _is_safe_url(url: str) -> bool:
-    """Return False if the URL resolves to a private or loopback IP (SSRF guard)."""
+    """Return False if the URL resolves to a private, loopback, unspecified,
+    multicast, or link-local IP (SSRF guard)."""
     try:
         hostname = urllib.parse.urlparse(url).hostname or ""
         if not hostname:
             return False
         try:
             ip = ipaddress.ip_address(hostname)  # raw IP literal
-            return not (ip.is_private or ip.is_loopback or ip.is_link_local)
+            return not (ip.is_private or ip.is_loopback or ip.is_link_local
+                        or ip.is_unspecified or ip.is_multicast)
         except ValueError:
             pass
         # Resolve all addresses (IPv4 and IPv6) to guard against IPv6 SSRF
@@ -42,11 +45,35 @@ def _is_safe_url(url: str) -> bool:
                 ip = ipaddress.ip_address(sockaddr[0])
             except ValueError:
                 return False
-            if ip.is_private or ip.is_loopback or ip.is_link_local:
+            if (ip.is_private or ip.is_loopback or ip.is_link_local
+                    or ip.is_unspecified or ip.is_multicast):
                 return False
         return True
     except (socket.gaierror, socket.herror, socket.timeout, ValueError, OSError):
         return False
+
+
+class _SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Redirect handler that validates redirect targets against the SSRF guard."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if not _is_safe_url(newurl):
+            raise urllib.error.HTTPError(
+                req.full_url, code,
+                "Redirect blocked by URL safety policy",
+                headers, fp,
+            )
+        return urllib.request.HTTPRedirectHandler.redirect_request(
+            self, req, fp, code, msg, headers, newurl
+        )
+
+
+def build_safe_opener(context=None):
+    """Build an urllib OpenerDirector that validates redirect targets."""
+    handlers = [_SafeRedirectHandler()]
+    if context is not None:
+        handlers.insert(0, urllib.request.HTTPSHandler(context=context))
+    return urllib.request.build_opener(*handlers)
 
 
 def validate_url_safety(url: str, max_length: int = 2000) -> Tuple[bool, Optional[str]]:

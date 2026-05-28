@@ -172,10 +172,10 @@ def get_stats(db: Session = Depends(get_db)):
     # ── Rating distribution ───────────────────────────────────────────────────
     r = models.Game.user_rating
     (b1, b2, b3, b4, b5) = db.query(
-        func.count(case((r <= 2,  1))),
-        func.count(case(((r >= 3) & (r <= 4),  1))),
-        func.count(case(((r >= 5) & (r <= 6),  1))),
-        func.count(case(((r >= 7) & (r <= 8),  1))),
+        func.count(case((r < 3,  1))),
+        func.count(case(((r >= 3) & (r < 5),  1))),
+        func.count(case(((r >= 5) & (r < 7),  1))),
+        func.count(case(((r >= 7) & (r < 9),  1))),
         func.count(case((r >= 9,  1))),
     ).filter(r.isnot(None)).one()
     buckets = {"1–2": b1, "3–4": b2, "5–6": b3, "7–8": b4, "9–10": b5}

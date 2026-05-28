@@ -12,11 +12,13 @@ from sqlalchemy.orm import Session
 from database import get_db
 import models
 import schemas
-from utils import validate_url_safety, safe_image_ext, get_game_or_404, validate_file_extension, safe_write_file, safe_delete_file
+from utils import validate_url_safety, safe_image_ext, get_game_or_404, validate_file_extension, safe_write_file, safe_delete_file, build_safe_opener
 from constants import MAX_IMAGE_SIZE, ALLOWED_IMAGE_EXTENSIONS
 
 logger = logging.getLogger("cardboard.gallery")
 router = APIRouter(prefix="/api/games", tags=["gallery"])
+
+_safe_opener = build_safe_opener()
 
 GALLERY_DIR = os.getenv("GALLERY_DIR", "/app/data/gallery")
 
@@ -215,7 +217,7 @@ def add_gallery_image_from_url(
 
     try:
         req = urllib.request.Request(body.url, headers={"User-Agent": "Cardboard/1.0"})
-        with urllib.request.urlopen(req, timeout=15) as resp:
+        with _safe_opener.open(req, timeout=15) as resp:
             content_type = resp.headers.get("Content-Type", "image/jpeg")
             
             # Validate content type before downloading

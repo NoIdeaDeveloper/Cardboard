@@ -24,8 +24,8 @@ def test_stats_empty_db(client):
     assert data["total_games"] == 0
     assert data["total_sessions"] == 0
     assert data["total_hours"] == 0.0
-    # by_status may include 0-count entries for all known statuses
-    assert all(v == 0 for v in data["by_status"].values())
+    assert data["by_status"]["owned"] == 0
+    assert data["by_status"]["wishlist"] == 0
 
 
 def test_stats_with_data(client):

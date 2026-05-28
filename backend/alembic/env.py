@@ -24,11 +24,13 @@ target_metadata = Base.metadata
 
 
 def run_migrations_online() -> None:
+    url = config.get_main_option("sqlalchemy.url") or ""
+    connect_args = {"check_same_thread": False} if "sqlite" in url else {}
     connectable = engine_from_config(
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
-        connect_args={"check_same_thread": False},
+        connect_args=connect_args,
     )
 
     with connectable.connect() as connection:

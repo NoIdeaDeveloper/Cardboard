@@ -4,7 +4,9 @@ Test fixtures for the Cardboard v2 backend.
 Environment variables must be set BEFORE importing main/database, because they are
 read at module level. conftest.py is the right place to do this.
 """
+import atexit
 import os
+import shutil
 import sys
 import tempfile
 
@@ -12,6 +14,7 @@ import tempfile
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 _test_tmp = tempfile.mkdtemp(prefix="cardboard_test_")
+atexit.register(shutil.rmtree, _test_tmp, ignore_errors=True)
 
 os.environ.setdefault("DATABASE_URL", "sqlite://")          # in-memory SQLite
 os.environ.setdefault("DATA_DIR", _test_tmp)

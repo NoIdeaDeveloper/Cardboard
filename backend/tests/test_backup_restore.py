@@ -290,9 +290,7 @@ def test_restore_path_traversal_does_not_escape_data_dir(backup_client, file_env
     buf.seek(0)
 
     r = _post_restore(backup_client, buf.read())
-    # Restore itself may succeed (we only skip the bad entry) — what matters is
-    # the evil file was NOT written outside data_dir.
-    evil_path = os.path.abspath("/tmp/evil_cardboard.txt")
+    evil_path = os.path.normpath(os.path.join(file_env["data_dir"], "images", "..", "..", "..", "tmp", "evil_cardboard.txt"))
     assert not os.path.exists(evil_path)
 
 

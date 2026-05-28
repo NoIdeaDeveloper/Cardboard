@@ -118,6 +118,10 @@
       requestAnimationFrame(() => toast.classList.add('show'));
       setTimeout(() => { toast.classList.remove('show'); setTimeout(() => toast.remove(), 300); }, 3500);
     }
+    function safeImgUrl(url) {
+      if (!url) return null;
+      return url.startsWith('/api/') || url.startsWith('https://') || url.startsWith('http://') ? url : null;
+    }
     function imgFallback(img) {
       const div = document.createElement('div');
       div.className = 'placeholder-image';
@@ -180,7 +184,7 @@
         </div>` : '';
       el.innerHTML = `
         <div class="game-card-image">
-          ${game.image_url ? `<img src="${escapeHtml(game.image_url)}" alt="" loading="lazy" onerror="imgFallback(this)">` : '<div class="placeholder-image"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg></div>'}
+          ${safeImgUrl(game.image_url) ? `<img src="${escapeHtml(game.image_url)}" alt="" loading="lazy" onerror="imgFallback(this)">` : '<div class="placeholder-image"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg></div>'}
         </div>
         <div class="game-card-body">
           <div class="game-card-title-row">
@@ -231,7 +235,7 @@
       const labels = parseList(game.labels);
 
       function fresh_img(g) {
-        return g.image_url
+        return g.image_url && safeImgUrl(g.image_url)
           ? `<img src="${escapeHtml(g.image_url)}" alt="${escapeHtml(g.name)}" class="modal-hero-image" loading="lazy">`
           : `<div class="modal-hero-placeholder"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="48" height="48"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg></div>`;
       }

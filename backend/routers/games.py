@@ -30,7 +30,7 @@ from database import SessionLocal, get_db, engine
 import models
 import schemas
 from routers.game_images import delete_all_gallery_images
-from utils import validate_url_safety, safe_image_ext, get_game_or_404, validate_file_extension, collection_etag, parse_json_list, safe_write_file, safe_delete_file
+from utils import validate_url_safety, safe_image_ext, get_game_or_404, validate_file_extension, collection_etag, parse_json_list, safe_write_file, safe_delete_file, build_safe_opener
 from constants import (
     MAX_IMAGE_SIZE, ALLOWED_IMAGE_EXTENSIONS,
     MAX_INSTRUCTIONS_SIZE, ALLOWED_INSTRUCTIONS_EXTENSIONS,
@@ -54,6 +54,9 @@ _BGG_RATE_WINDOW = 60.0       # seconds
 _bgg_buckets: dict[str, list[float]] = _collections.defaultdict(list)
 _bgg_lock = _threading.Lock()
 _bgg_ssl_ctx = ssl.create_default_context(cafile=certifi.where())
+
+_safe_opener = build_safe_opener()
+_safe_opener_ssl = build_safe_opener(context=_bgg_ssl_ctx)
 
 # Limit concurrent image caching to avoid exhausting the SQLite connection pool
 _cache_semaphore = _threading.BoundedSemaphore(2)
@@ -130,7 +133,7 @@ def _cache_game_image(game_id: int, image_url: str) -> None:
 
         try:
             req = urllib.request.Request(image_url, headers={"User-Agent": "Cardboard/1.0"})
-            with urllib.request.urlopen(req, timeout=15) as resp:
+            with _safe_opener.open(req, timeout=15) as resp:
                 content_type = resp.headers.get("Content-Type", "image/jpeg")
                 ext = _safe_ext(image_url, content_type)
                 dest = os.path.join(IMAGES_DIR, f"{game_id}{ext}")
@@ -1135,12 +1138,16 @@ async def _stream_backup_to_tempfile(file: UploadFile, suffix: str = ".zip", dir
             total += len(chunk)
             if total > RESTORE_MAX_BYTES:
                 tmp.close()
+                os.unlink(tmp.name)
                 raise HTTPException(status_code=413, detail="Backup file too large (max 500 MB)")
             tmp.write(chunk)
     except HTTPException:
+        tmp.close()
+        os.unlink(tmp.name)
         raise
     except Exception:
         tmp.close()
+        os.unlink(tmp.name)
         raise
     tmp.close()
     return tmp
@@ -1185,9 +1192,10 @@ async def restore_backup(file: UploadFile = File(...)):
 
     validate_file_extension(file.filename or "", {".zip"}, "Only .zip backup files are allowed")
 
-    tmp_zip = await _stream_backup_to_tempfile(file, dir=data_dir)
     db_tmp = None
+    tmp_zip = None
     try:
+        tmp_zip = await _stream_backup_to_tempfile(file, dir=data_dir)
         with zipfile.ZipFile(tmp_zip.name, "r") as zf:
             conn, db_tmp = _extract_and_validate_db(zf, tmp_zip.name, ".restore.db")
             conn.close()
@@ -1222,7 +1230,8 @@ async def restore_backup(file: UploadFile = File(...)):
         logger.error("Restore failed: %s", exc)
         raise HTTPException(status_code=500, detail="Restore failed. The backup may be invalid.")
     finally:
-        safe_delete_file(tmp_zip.name)
+        if tmp_zip:
+            safe_delete_file(tmp_zip.name)
         if db_tmp:
             safe_delete_file(db_tmp)
 
@@ -1236,9 +1245,10 @@ async def preview_restore(file: UploadFile = File(...)):
     """
     validate_file_extension(file.filename or "", {".zip"}, "Only .zip backup files are allowed")
 
-    tmp_zip = await _stream_backup_to_tempfile(file)
+    tmp_zip = None
     db_tmp = None
     try:
+        tmp_zip = await _stream_backup_to_tempfile(file)
         with zipfile.ZipFile(tmp_zip.name, "r") as zf:
             names = zf.namelist()
             conn, db_tmp = _extract_and_validate_db(zf, tmp_zip.name, ".preview.db")
@@ -1287,7 +1297,8 @@ async def preview_restore(file: UploadFile = File(...)):
         logger.error("Preview failed: %s", exc)
         raise HTTPException(status_code=500, detail="Failed to preview backup")
     finally:
-        safe_delete_file(tmp_zip.name)
+        if tmp_zip:
+            safe_delete_file(tmp_zip.name)
         if db_tmp:
             safe_delete_file(db_tmp)
 
@@ -1299,7 +1310,7 @@ def bgg_search(request: Request, q: str = Query(..., min_length=1, max_length=20
     url = f"https://boardgamegeek.com/xmlapi2/search?query={urllib.parse.quote(q)}&type=boardgame"
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "Cardboard/1.0"})
-        with urllib.request.urlopen(req, timeout=10, context=_bgg_ssl_ctx) as resp:
+        with _safe_opener_ssl.open(req, timeout=10) as resp:
             content = resp.read(2 * 1024 * 1024)
         root = ET.fromstring(content)
         results = []
@@ -1960,7 +1971,7 @@ def _fetch_bgg_thing(bgg_id: int) -> Optional[ET.Element]:
         req = urllib.request.Request(url, headers={"User-Agent": "Cardboard/1.0"})
         content = None
         for attempt in range(3):
-            with urllib.request.urlopen(req, timeout=15, context=_bgg_ssl_ctx) as resp:
+            with _safe_opener_ssl.open(req, timeout=15) as resp:
                 if resp.status == 202:
                     logger.info("BGG returned 202 for id=%d, retry %d/3", bgg_id, attempt + 1)
                     time.sleep(2)
