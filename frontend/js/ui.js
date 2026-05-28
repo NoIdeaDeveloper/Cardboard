@@ -2462,7 +2462,7 @@ function buildStatsView(stats, games, prefs = {}, onPrefsChange = null, goals = 
 
   // Collection Value
   const collectionValueHtml = buildCollectionValueSection(
-    stats.collection_value || {}, currentPrefs.show_collection_value !== false
+    stats.collection_value || {}, currentPrefs.show_collection_value === false
   ).outerHTML;
 
   // Player Leaderboard

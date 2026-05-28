@@ -176,7 +176,7 @@
       const wishlistExtra = game.status === 'wishlist' && (game.priority || game.target_price) ? `
         <div class="wishlist-card-meta">
           ${game.priority ? `<span class="wishlist-priority-sm">${'★'.repeat(game.priority)}</span>` : ''}
-          ${game.target_price ? `<span class="wishlist-price-sm">£${game.target_price.toFixed(2)}</span>` : ''}
+          ${game.target_price ? `<span class="wishlist-price-sm">$${game.target_price.toFixed(2)}</span>` : ''}
         </div>` : '';
       el.innerHTML = `
         <div class="game-card-image">
@@ -230,6 +230,12 @@
       const mechanics = parseList(game.mechanics);
       const labels = parseList(game.labels);
 
+      function fresh_img(g) {
+        return g.image_url
+          ? `<img src="${escapeHtml(g.image_url)}" alt="${escapeHtml(g.name)}" class="modal-hero-image" loading="lazy">`
+          : `<div class="modal-hero-placeholder"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="48" height="48"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg></div>`;
+      }
+
       inner.innerHTML = `
         <div class="modal-hero">
           ${fresh_img(game)}
@@ -257,7 +263,7 @@
             <div class="section-label">Wishlist Info</div>
             <div class="wishlist-info-row">
               ${game.priority ? `<span class="wishlist-priority">Priority: ${'★'.repeat(game.priority)}${'☆'.repeat(5-game.priority)}</span>` : ''}
-              ${game.target_price ? `<span class="wishlist-target-price">Target: £${game.target_price.toFixed(2)}</span>` : ''}
+              ${game.target_price ? `<span class="wishlist-target-price">Target: $${game.target_price.toFixed(2)}</span>` : ''}
             </div>
           </div>` : ''}
           ${!staticData ? `<div class="modal-section want-to-play-section" id="want-to-play-section">
@@ -290,12 +296,6 @@
             </div>
           </div>` : ''}
         </div>`;
-
-      function fresh_img(g) {
-        return g.image_url
-          ? `<img src="${escapeHtml(g.image_url)}" alt="${escapeHtml(g.name)}" class="modal-hero-image" loading="lazy">`
-          : `<div class="modal-hero-placeholder"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="48" height="48"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg></div>`;
-      }
 
       inner.querySelector('#share-modal-close').addEventListener('click', closeGameDetail);
 
@@ -344,7 +344,7 @@
 
       if (game.bgg_id) {
         const bggUrl = `https://boardgamegeek.com/boardgame/${game.bgg_id}`;
-        const bggMsg = `Check out *${escapeHtml(game.name)}* on BoardGameGeek!\n\n${bggUrl}`;
+        const bggMsg = `Check out *${game.name}* on BoardGameGeek!\n\n${bggUrl}`;
 
         const waBtn = inner.querySelector('#share-bgg-wa-btn');
         if (waBtn) waBtn.addEventListener('click', () => {

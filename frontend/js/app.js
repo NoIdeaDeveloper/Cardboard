@@ -2780,6 +2780,8 @@
       { key: 'N',   desc: 'Add a new game' },
       { key: 'S',   desc: 'Focus the search bar' },
       { key: 'E',   desc: 'Edit hovered or open game' },
+      { key: '/',   desc: 'Focus the search bar (anywhere)' },
+      { key: '← / →', desc: 'Navigate between games in modal' },
       { key: 'Esc', desc: 'Close modal or overlay' },
     ];
 

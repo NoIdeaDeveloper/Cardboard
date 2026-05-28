@@ -673,7 +673,7 @@ def get_stats(db: Session = Depends(get_db)):
         )
 
     # ── Collection Churn Dashboard ─────────────────────────────────────────
-    ever_acquired = by_status["owned"] + by_status["sold"] + by_status["wishlist"]
+    ever_acquired = by_status["owned"] + by_status["sold"]
     current_year = str(today.year)
     acquired_this_year, sold_this_year = db.query(
         func.count(case((

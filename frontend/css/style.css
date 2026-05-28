@@ -761,7 +761,7 @@ button.footer-link {
   line-height: 1;
   border-radius: 8px;
   pointer-events: none;
-  box-shadow: 0 0 0 2px var(--bg-1);
+  box-shadow: 0 0 0 2px var(--bg);
 }
 
 .view-toggle { display: flex; gap: 4px; }
@@ -1132,7 +1132,8 @@ button.footer-link {
   to   { opacity: 1; }
 }
 
-.placeholder-icon {
+.placeholder-icon,
+.placeholder-image {
   width: 48px;
   height: 48px;
   color: var(--text-3);
@@ -1995,7 +1996,7 @@ button.footer-link {
   align-items: center;
   gap: 5px;
   padding: 5px 10px;
-  border-radius: var(--radius-full);
+  border-radius: 9999px;
   background: none;
   border: 1px solid transparent;
   color: var(--text-2);
@@ -2058,7 +2059,7 @@ button.footer-link {
   display: flex;
   align-items: center;
   gap: 6px;
-  border-radius: var(--radius-full);
+  border-radius: 9999px;
   padding: 8px 22px;
   font-size: 0.85rem;
   background: var(--bg-3);
@@ -5175,7 +5176,7 @@ img.ql-chip-avatar { display: block; object-fit: cover; }
   grid-template-columns: repeat(4, 44px);
   gap: 6px;
   padding: 10px;
-  background: var(--bg-1, #fff);
+  background: var(--bg, #fff);
   border: 1px solid var(--border, #ddd);
   border-radius: var(--radius-lg, 10px);
   box-shadow: 0 8px 24px rgba(0,0,0,0.18);
