@@ -1017,13 +1017,20 @@ def export_json(db: Session = Depends(get_db)):
     games = db.query(models.Game).all()
     game_results = build_game_responses(games, db)
     sessions = db.query(models.PlaySession).all()
+    # Pre-load all session-player rows with a single JOIN to avoid N+1 queries
+    # and attribute access on non-existent ORM relationships.
+    sp_rows = (
+        db.query(models.SessionPlayer, models.Player)
+        .join(models.Player, models.Player.id == models.SessionPlayer.player_id)
+        .all()
+    )
+    sp_map: dict[int, list[dict]] = {}
+    for sp, player in sp_rows:
+        sp_map.setdefault(sp.session_id, []).append({"name": player.name, "score": sp.score})
     session_rows = []
     for s in sessions:
         d = schemas.PlaySessionResponse.model_validate(s).model_dump(mode="json")
-        d["players"] = [
-            {"name": p.player.name, "score": p.score, "winner": p.winner}
-            for p in s.players
-        ]
+        d["players"] = sp_map.get(s.id, [])
         session_rows.append(d)
     players = db.query(models.Player).all()
     player_rows = [schemas.PlayerOut.model_validate(p).model_dump(mode="json") for p in players]
@@ -1523,7 +1530,7 @@ def _fuzzy_match(a: str, b: str) -> bool:
 
 def _possible_expansion(name: str, candidate: str) -> bool:
     """Detect if name looks like an expansion of candidate or vice versa."""
-    exp_markers = ["expansion", "exp", "expansion for", "expansion:", "promo", "mini expansion"]
+    exp_markers = ["mini expansion", "expansion for", "expansion:", "expansion", "promo", "exp"]
     name_has_marker = any(m in name for m in exp_markers)
     cand_has_marker = any(m in candidate for m in exp_markers)
     if not name_has_marker and not cand_has_marker:
@@ -2234,12 +2241,7 @@ def group_recommend(body: schemas.GroupRecommendRequest, db: Session = Depends(g
     player_ids = body.player_ids
     player_count = len(player_ids)
     today = date.today()
-    recent_cutoff = today - timedelta(days=30)
     six_months_ago = today - timedelta(days=180)
-
-    # Fetch player names for winner lookup
-    player_rows = db.query(models.Player.id, models.Player.name).filter(models.Player.id.in_(player_ids)).all()
-    player_names = [p.name for p in player_rows]
 
     # Candidate games: owned, supports player count, not expansions
     query = db.query(models.Game).filter(

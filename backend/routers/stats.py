@@ -865,7 +865,6 @@ def get_collection_stats(request: Request, db: Session = Depends(get_db)):
         .outerjoin(models.PlaySession, models.PlaySession.game_id == models.Game.id)
         .filter(models.PlaySession.id.is_(None))
         .filter(models.Game.status == "owned")
-        .filter(models.Game.parent_game_id.is_(None))
         .scalar() or 0
     )
 
@@ -1081,9 +1080,6 @@ def recommend_game(
         scored.append((g, score * fit, reason, detail))
 
     scored.sort(key=lambda x: x[1], reverse=True)
-    if not scored:
-        raise HTTPException(status_code=404, detail="No suitable game found")
-
     top = scored[0]
     confidence = min(1.0, top[1] / 100.0)
 

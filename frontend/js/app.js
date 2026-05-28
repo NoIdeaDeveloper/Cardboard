@@ -72,7 +72,7 @@
     if (params.has('q')) state.search = params.get('q');
     if (params.has('sort')) {
       const raw = params.get('sort');
-      if (raw.endsWith('_desc')) { state.sortBy = raw.replace('_desc', ''); state.sortDir = 'desc'; }
+      if (raw.endsWith('_desc')) { state.sortBy = raw.replace(/_desc$/, ''); state.sortDir = 'desc'; }
       else { state.sortBy = raw; state.sortDir = 'asc'; }
     }
     if (params.has('view')) {
