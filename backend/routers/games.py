@@ -1033,7 +1033,7 @@ def export_json(db: Session = Depends(get_db)):
         d["players"] = sp_map.get(s.id, [])
         session_rows.append(d)
     players = db.query(models.Player).all()
-    player_rows = [schemas.PlayerOut.model_validate(p).model_dump(mode="json") for p in players]
+    player_rows = [schemas.PlayerResponse.model_validate(p).model_dump(mode="json") for p in players]
     payload = {
         "export_date": datetime.now(timezone.utc).isoformat(),
         "version": "1.0",
@@ -1507,10 +1507,10 @@ def check_duplicate(
             reason = "exact_name"
         elif bgg_id is not None and g.bgg_id == bgg_id:
             reason = "same_bgg_id"
-        elif _fuzzy_match(name_lower, g_name_lower):
-            reason = "similar_name"
         elif _possible_expansion(name_lower, g_name_lower):
             reason = "possible_expansion"
+        elif _fuzzy_match(name_lower, g_name_lower):
+            reason = "similar_name"
 
         if reason:
             results.append(schemas.DuplicateCheckEntry(
@@ -2264,6 +2264,7 @@ def group_recommend(body: schemas.GroupRecommendRequest, db: Session = Depends(g
     games = query.all()
     if not games:
         return schemas.GroupRecommendResponse(recommendations=[])
+    _load_tags(games, db)
 
     game_ids = [g.id for g in games]
 
@@ -2381,7 +2382,7 @@ def group_recommend(body: schemas.GroupRecommendRequest, db: Session = Depends(g
             continue
         if key_reason:
             seen_reasons.add(key_reason)
-        confidence = min(1.0, score / 80.0)
+        confidence = max(0.0, min(1.0, score / 80.0))
         results.append(schemas.GroupRecommendEntry(
             game=schemas.GameOut.model_validate(g),
             reason=" · ".join(reasons[:2]) if reasons else "A good fit for your group",

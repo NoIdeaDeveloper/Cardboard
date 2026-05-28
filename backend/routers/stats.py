@@ -2,7 +2,7 @@ import logging
 from datetime import date, timedelta
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, Response
 from sqlalchemy import case, func
 from sqlalchemy.orm import Session
@@ -57,7 +57,7 @@ def _trade_sell_candidates(db: Session, today: date, session_counts_rows: list) 
         reasons = []
         session_count = sc_map.get(g.id, 0)
 
-        if session_count == 0 and g.purchase_price and g.purchase_price > 0:
+        if session_count == 0:
             score += 40
             reasons.append("Never played")
         elif g.last_played and g.last_played < six_months_ago:
@@ -1017,15 +1017,22 @@ def recommend_game(
     excluded_ids = [int(x) for x in exclude.split(",") if x.strip().isdigit()] if exclude else []
     today = date.today()
 
-    candidates = (
+    cq = (
         db.query(models.Game)
         .filter(models.Game.status == "owned")
         .filter(models.Game.id.notin_(excluded_ids) if excluded_ids else True)
-        .all()
     )
+    if mechanic:
+        cq = cq.join(models.GameMechanic, models.GameMechanic.game_id == models.Game.id).join(
+            models.Mechanic, models.Mechanic.id == models.GameMechanic.mechanic_id
+        ).filter(models.Mechanic.name == mechanic)
+    candidates = cq.all()
 
     if not candidates:
         raise HTTPException(status_code=404, detail="No suitable game found")
+
+    from routers.games import _load_tags
+    _load_tags(candidates, db)
 
     # Pre-load session counts for all candidates
     game_ids = [g.id for g in candidates]
