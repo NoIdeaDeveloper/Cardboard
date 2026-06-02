@@ -79,7 +79,10 @@ def _compute_current_value(goal: models.Goal, db: Session) -> int:
         # Count how many distinct categories among owned games have been played at least once
         played_game_ids = {
             row[0] for row in
-            db.query(func.distinct(models.PlaySession.game_id)).all()
+            db.query(func.distinct(models.PlaySession.game_id))
+            .join(models.Game, models.Game.id == models.PlaySession.game_id)
+            .filter(models.Game.status == "owned")
+            .all()
         }
         category_rows = (
             db.query(models.GameCategory.game_id, models.Category.name)

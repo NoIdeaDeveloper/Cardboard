@@ -540,6 +540,7 @@ def get_stats(db: Session = Depends(get_db)):
             db.query(models.Game.id, models.Game.name, models.Game.last_played)
             .filter(
                 models.Game.status == "owned",
+                models.Game.parent_game_id.is_(None),
                 models.Game.last_played.isnot(None),
                 models.Game.last_played <= six_months_ago,
             )
@@ -871,7 +872,7 @@ def get_collection_stats(request: Request, db: Session = Depends(get_db)):
         db.query(func.count(models.Game.id))
         .outerjoin(models.PlaySession, models.PlaySession.game_id == models.Game.id)
         .filter(models.PlaySession.id.is_(None))
-        .filter(models.Game.status == "owned")
+        .filter(models.Game.status == "owned", models.Game.parent_game_id.is_(None))
         .scalar() or 0
     )
 
@@ -974,6 +975,7 @@ def get_collection_stats(request: Request, db: Session = Depends(get_db)):
                 db.query(models.Game.id, models.Game.name, models.Game.last_played)
                 .filter(
                     models.Game.status == "owned",
+                    models.Game.parent_game_id.is_(None),
                     models.Game.last_played.isnot(None),
                     models.Game.last_played <= six_months_ago,
                 )
@@ -1032,7 +1034,7 @@ def recommend_game(
     if mechanic:
         cq = cq.join(models.GameMechanic, models.GameMechanic.game_id == models.Game.id).join(
             models.Mechanic, models.Mechanic.id == models.GameMechanic.mechanic_id
-        ).filter(models.Mechanic.name == mechanic)
+        ).filter(models.Mechanic.name == mechanic).distinct()
     candidates = cq.all()
 
     if not candidates:

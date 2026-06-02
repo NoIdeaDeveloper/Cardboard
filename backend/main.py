@@ -1,5 +1,6 @@
 import logging
 import os
+import secrets
 import time
 from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI, Request
@@ -62,7 +63,10 @@ def health_check(db: Session = Depends(get_db)):
     return {"status": "ok"}
 
 _raw_origins = os.getenv("ALLOWED_ORIGINS", "").split(",")
-_ALLOWED_ORIGINS = [o.strip() for o in _raw_origins if o.strip()] or ["*"]
+_ALLOWED_ORIGINS = [o.strip() for o in _raw_origins if o.strip()]
+if not _ALLOWED_ORIGINS:
+    _ALLOWED_ORIGINS = ["http://localhost", "http://127.0.0.1"]
+    logger.warning("ALLOWED_ORIGINS not set — defaulting to localhost only. Set ALLOWED_ORIGINS for production.")
 if "*" in _ALLOWED_ORIGINS:
     logger.warning("CORS is open to ALL origins — set ALLOWED_ORIGINS for production")
 app.add_middleware(GZipMiddleware, minimum_size=1000)
@@ -86,15 +90,17 @@ async def add_security_headers(request: Request, call_next):
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    nonce = secrets.token_urlsafe(16)
     response.headers["Content-Security-Policy"] = (
         "default-src 'self'; "
-        "script-src 'self' 'unsafe-inline'; "
+        f"script-src 'self' 'nonce-{nonce}'; "
         "style-src 'self' 'unsafe-inline'; "
         "img-src 'self' data: blob: https:; "
         "connect-src 'self'; "
         "font-src 'self'; "
         "object-src 'none';"
     )
+    response.headers["X-CSP-Nonce"] = nonce
     return response
 
 

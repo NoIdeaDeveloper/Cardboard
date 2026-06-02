@@ -242,7 +242,10 @@
     });
   }
 
+  let _recommendReqId = 0;
+
   async function loadRecommendCard() {
+    const myReqId = ++_recommendReqId;
     const container = document.getElementById('recommend-card');
     if (!container) return;
     const skips = getRecommendSkips();
@@ -252,6 +255,7 @@
     if (state.filterTime !== null) params.set('minutes', String(state.filterTime));
     try {
       const rec = await API.recommend(params.toString());
+      if (myReqId !== _recommendReqId) return;
       if (!rec || !rec.game) { container.style.display = 'none'; return; }
       const g = rec.game;
       const thumb = isSafeUrl(g.image_url)
@@ -275,6 +279,7 @@
       });
       container.querySelector('[data-recommend-skip]')?.addEventListener('click', () => skipRecommend(g.id));
     } catch (err) {
+      if (myReqId !== _recommendReqId) return;
       if (err.status !== 404) console.warn('Recommend load failed:', err);
       container.style.display = 'none';
     }
@@ -1095,7 +1100,7 @@
     const ids = [...state.selectedGameIds];
     if (!ids.length) return;
     const modal = document.getElementById('game-modal');
-    const inner = document.getElementById('game-modal-inner');
+    const inner = document.getElementById('modal-inner');
     inner.innerHTML = `
       <div class="modal-content-panel">
         <div class="modal-panel-header">
@@ -1187,6 +1192,7 @@
     const successCount = ids.length - failedIds.size;
     const successfullyDeleted = new Set(ids.filter(id => !failedIds.has(id)));
     state.games = state.games.filter(g => !successfullyDeleted.has(g.id));
+    state.serverTotal -= successCount;
     state.selectedGameIds.clear();
     const failCount = failedIds.size;
     const msg = failCount > 0
@@ -2599,7 +2605,7 @@
 
   function openExportModal() {
     const modal = document.getElementById('game-modal');
-    const inner = document.getElementById('game-modal-inner');
+    const inner = document.getElementById('modal-inner');
     inner.innerHTML = `
       <div class="modal-content-panel">
         <div class="modal-panel-header">

@@ -14,7 +14,9 @@ const _cache = {};
 // Call after any mutation that changes the collection so the next GET fetches fresh data
 function invalidateCollectionEtag() {
   for (const key of Object.keys(_cache)) {
-    if (key === '/games/' || key.startsWith('/games/?') || key === '/collection/stats') {
+    if (key === '/games/' || key.startsWith('/games/?') || key === '/collection/stats'
+        || key === '/players/' || key.startsWith('/players/?')
+        || key === '/goals/' || key.startsWith('/goals/?')) {
       delete _cache[key];
     }
   }

@@ -16,6 +16,7 @@ import time
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
+import defusedxml.ElementTree as DefusedET
 import zipfile
 import atexit
 from datetime import date as _date, datetime, timezone
@@ -30,7 +31,7 @@ from database import SessionLocal, get_db, engine
 import models
 import schemas
 from routers.game_images import delete_all_gallery_images
-from utils import validate_url_safety, safe_image_ext, get_game_or_404, validate_file_extension, collection_etag, parse_json_list, safe_write_file, safe_delete_file, build_safe_opener
+from utils import validate_url_safety, safe_image_ext, get_game_or_404, validate_file_extension, collection_etag, parse_json_list, safe_write_file, safe_delete_file, build_safe_opener, validate_image_content
 from constants import (
     MAX_IMAGE_SIZE, ALLOWED_IMAGE_EXTENSIONS,
     MAX_INSTRUCTIONS_SIZE, ALLOWED_INSTRUCTIONS_EXTENSIONS,
@@ -460,9 +461,7 @@ def get_games(
         query = query.filter(models.Game.user_rating >= rating_min)
 
     if rating_max is not None:
-        query = query.filter(
-            or_(models.Game.user_rating.is_(None), models.Game.user_rating <= rating_max)
-        )
+        query = query.filter(models.Game.user_rating <= rating_max)
 
     if added_month is not None:
         query = query.filter(func.strftime("%Y-%m", models.Game.date_added) == added_month)
@@ -1111,10 +1110,20 @@ def export_images(background_tasks: BackgroundTasks, db: Session = Depends(get_d
             url = game.image_url
             if not url or url.startswith("http"):
                 continue
-            path = os.path.join(FRONTEND_PATH or ".", url.lstrip("/"))
-            if os.path.isfile(path):
-                arcname = f"game-{game.id}-{os.path.basename(path)}"
-                zf.write(path, arcname)
+            if url.startswith("/api/"):
+                # Cached image — look in IMAGES_DIR by game ID
+                if game.image_cached and game.image_ext:
+                    path = os.path.join(IMAGES_DIR, f"{game.id}{game.image_ext}")
+                    if os.path.isfile(path):
+                        arcname = f"game-{game.id}-{os.path.basename(path)}"
+                        zf.write(path, arcname)
+            else:
+                # Legacy path-based image — validate stays within FRONTEND_PATH
+                base = os.path.realpath(FRONTEND_PATH or ".")
+                path = os.path.realpath(os.path.join(base, url.lstrip("/")))
+                if path.startswith(base + os.sep) and os.path.isfile(path):
+                    arcname = f"game-{game.id}-{os.path.basename(path)}"
+                    zf.write(path, arcname)
     tmp.close()
     background_tasks.add_task(os.remove, tmp.name)
     return FileResponse(
@@ -1317,7 +1326,7 @@ def bgg_search(request: Request, q: str = Query(..., min_length=1, max_length=20
         req = urllib.request.Request(url, headers={"User-Agent": "Cardboard/1.0"})
         with _safe_opener_ssl.open(req, timeout=10) as resp:
             content = resp.read(2 * 1024 * 1024)
-        root = ET.fromstring(content)
+        root = DefusedET.fromstring(content)
         results = []
         for item in root.findall("item")[:8]:
             bgg_id = int(item.get("id", 0))
@@ -1723,6 +1732,9 @@ async def upload_image(game_id: int, file: UploadFile = File(...), db: Session =
     if len(content) > MAX_IMAGE_SIZE:
         raise HTTPException(status_code=413, detail="File exceeds 10 MB limit")
 
+    if not validate_image_content(content):
+        raise HTTPException(status_code=400, detail="File content does not match a valid image format")
+
     os.makedirs(IMAGES_DIR, exist_ok=True)
     _delete_cached_image(game_id)
 
@@ -1825,7 +1837,7 @@ async def import_bgg(file: UploadFile = File(...), db: Session = Depends(get_db)
         raise HTTPException(status_code=413, detail="File too large (max 10 MB)")
 
     try:
-        root = ET.fromstring(content)
+        root = DefusedET.fromstring(content)
     except ET.ParseError as exc:
         logger.warning("BGG XML import parse error: %s", exc)
         raise HTTPException(status_code=400, detail="Invalid XML file")
@@ -1989,7 +2001,7 @@ def _fetch_bgg_thing(bgg_id: int) -> Optional[ET.Element]:
         if content is None:
             logger.warning("BGG fetch gave up after 3 x 202 for id=%d", bgg_id)
             return None
-        root = ET.fromstring(content)
+        root = DefusedET.fromstring(content)
         return root.find("item")
     except Exception as exc:
         logger.warning("BGG fetch failed for id=%d: %s", bgg_id, exc)
@@ -2424,7 +2436,7 @@ async def import_bgg_plays(file: UploadFile = File(...), db: Session = Depends(g
         raise HTTPException(status_code=413, detail="File too large (max 20 MB)")
 
     try:
-        root = ET.fromstring(content)
+        root = DefusedET.fromstring(content)
     except ET.ParseError as exc:
         logger.warning("BGG plays XML import parse error: %s", exc)
         raise HTTPException(status_code=400, detail="Invalid XML file")

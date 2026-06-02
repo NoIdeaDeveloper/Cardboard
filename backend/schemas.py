@@ -84,6 +84,7 @@ class GameUpdate(BaseModel):
     description: Optional[str] = Field(None, max_length=5000)
     image_url: Optional[str] = Field(None, max_length=2000)
     thumbnail_url: Optional[str] = Field(None, max_length=2000)
+    instructions_filename: Optional[str] = Field(None, max_length=255)
     categories: Optional[str] = Field(None, max_length=2000)
     mechanics: Optional[str] = Field(None, max_length=2000)
     designers: Optional[str] = Field(None, max_length=2000)
@@ -146,7 +147,7 @@ class CollectionStatsResponse(BaseModel):
     designer_counts: Dict[str, int] = {}
     publisher_counts: Dict[str, int] = {}
     play_pct: int = 0
-    neglected_favorite: Optional[NeglectedFavoriteEntry] = None
+    neglected_favorite: Optional["NeglectedFavoriteEntry"] = None
 
 
 class GameImageResponse(BaseModel):
@@ -610,7 +611,7 @@ class StatsResponse(BaseModel):
     play_projection: Optional[PlayProjection] = None
     collection_churn: Optional[CollectionChurn] = None
     health_notifications: List[str] = []
-    trade_sell: List[TradeSellEntry] = []
+    trade_sell: List["TradeSellEntry"] = []
 
 
 class GroupRecommendRequest(BaseModel):

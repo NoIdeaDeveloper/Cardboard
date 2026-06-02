@@ -6,3 +6,4 @@ python-multipart==0.0.26
 pydantic==2.12.5
 certifi
 reportlab==4.2.5
+defusedxml==0.7.1

@@ -97,9 +97,9 @@ def recalculate_elo_for_players(player_ids: Set[int], db: Session) -> None:
             sessions_data.append((s.id, sc))
             active_player_ids.update(sc.keys())
 
-    # Reset all players being recalculated
-    all_to_reset = player_ids | active_player_ids
-    players = db.query(models.Player).filter(models.Player.id.in_(list(all_to_reset))).all()
+    # Reset only the target players — non-target players in shared sessions
+    # must not be touched, as their other sessions aren't being replayed.
+    players = db.query(models.Player).filter(models.Player.id.in_(list(player_ids))).all()
     for p in players:
         p.elo_rating = 1500.0
         p.games_played = 0

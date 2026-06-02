@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from database import get_db
 import models
 import schemas
-from utils import validate_url_safety, safe_image_ext, get_game_or_404, validate_file_extension, safe_write_file, safe_delete_file, build_safe_opener
+from utils import validate_url_safety, safe_image_ext, get_game_or_404, validate_file_extension, safe_write_file, safe_delete_file, build_safe_opener, validate_image_content
 from constants import MAX_IMAGE_SIZE, ALLOWED_IMAGE_EXTENSIONS
 
 logger = logging.getLogger("cardboard.gallery")
@@ -97,6 +97,9 @@ async def upload_gallery_image(
     content = await file.read()
     if len(content) > MAX_IMAGE_SIZE:
         raise HTTPException(status_code=413, detail="File exceeds 10 MB limit")
+
+    if not validate_image_content(content):
+        raise HTTPException(status_code=400, detail="File content does not match a valid image format")
 
     # Next sort_order
     last = (

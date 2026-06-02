@@ -4,6 +4,7 @@ const API_CACHE_MAX = 50;  // max entries in API cache — prevents unbounded gr
 
 const SHELL_ASSETS = [
   '/',
+  '/js/shared-utils.js',
   '/js/api.js',
   '/js/app.js',
   '/js/ui.js',
