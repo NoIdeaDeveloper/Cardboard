@@ -55,10 +55,14 @@ def get_players(db: Session = Depends(get_db)):
         .subquery()
     )
     win_counts = (
-        db.query(models.Player.id.label("player_id"), func.count().label("wins"))
-        .join(models.PlaySession, models.PlaySession.winner == models.Player.name)
-        .filter(models.PlaySession.winner.isnot(None))
-        .group_by(models.Player.id)
+        db.query(models.SessionPlayer.player_id.label("player_id"), func.count().label("wins"))
+        .join(models.PlaySession, models.PlaySession.id == models.SessionPlayer.session_id)
+        .join(models.Player, models.Player.id == models.SessionPlayer.player_id)
+        .filter(
+            models.PlaySession.winner == models.Player.name,
+            models.PlaySession.winner.isnot(None),
+        )
+        .group_by(models.SessionPlayer.player_id)
         .subquery()
     )
     rows = (
@@ -315,7 +319,7 @@ def get_player_stats(player_id: int, db: Session = Depends(get_db)):
         .join(models.SessionPlayer, models.SessionPlayer.player_id == models.Player.id)
         .join(models.PlaySession, models.PlaySession.id == models.SessionPlayer.session_id)
         .filter(
-            models.SessionPlayer.session_id.in_(target_sessions),
+            models.SessionPlayer.session_id.in_(target_sessions.select()),
             models.Player.id != player_id,
             models.PlaySession.winner.isnot(None),
         )

@@ -577,7 +577,7 @@ class StatsResponse(BaseModel):
     collection_health: Optional[CollectionHealth] = None
     added_by_month_owned_only: List[AddedByMonthEntry] = []
     daily_streak: int = 0
-    weekly_streak: int = 0
+    best_weekly_streak: int = 0
     top_wishlist_game: Optional[TopWishlistEntry] = None
     unplayed_with_top_mechanic: int = 0
     best_at_player_counts: List[BestPlayerCountEntry] = []

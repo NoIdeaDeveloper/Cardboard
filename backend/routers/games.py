@@ -303,7 +303,7 @@ def _load_tags(games, db: Session) -> None:
 # ---------------------------------------------------------------------------
 
 def _attach_parent_name(game: models.Game, db: Session) -> schemas.GameResponse:
-    """Build a GameResponse with parent_game_name, heat_level, and expansion_count populated."""
+    """Build a GameResponse with parent_game_name, heat_level, expansion_count, and session_count populated."""
     data = schemas.GameResponse.model_validate(game)
     if game.parent_game_id:
         parent = db.query(models.Game).filter(models.Game.id == game.parent_game_id).first()
@@ -312,6 +312,11 @@ def _attach_parent_name(game: models.Game, db: Session) -> schemas.GameResponse:
     data.expansion_count = (
         db.query(func.count(models.Game.id))
         .filter(models.Game.parent_game_id == game.id)
+        .scalar() or 0
+    )
+    data.session_count = (
+        db.query(func.count(models.PlaySession.id))
+        .filter(models.PlaySession.game_id == game.id)
         .scalar() or 0
     )
     return data
@@ -1342,6 +1347,44 @@ def bgg_fetch(request: Request, bgg_id: int):
     return data
 
 
+@router.get("/check-duplicate", response_model=schemas.DuplicateCheckResponse)
+def check_duplicate(
+    name: str = Query(..., min_length=1, max_length=255),
+    bgg_id: Optional[int] = Query(None),
+    db: Session = Depends(get_db),
+):
+    """Check for potential duplicate games before adding a new one."""
+    name_lower = name.strip().lower()
+    if not name_lower:
+        return schemas.DuplicateCheckResponse(duplicates=[])
+
+    # Fetch all games for comparison (collection is typically small enough)
+    games = db.query(models.Game.id, models.Game.name, models.Game.status, models.Game.bgg_id).all()
+
+    results: list[schemas.DuplicateCheckEntry] = []
+
+    for g in games:
+        reason = None
+        g_name_lower = (g.name or "").lower()
+
+        if g_name_lower == name_lower:
+            reason = "exact_name"
+        elif bgg_id is not None and g.bgg_id == bgg_id:
+            reason = "same_bgg_id"
+        elif _possible_expansion(name_lower, g_name_lower):
+            reason = "possible_expansion"
+        elif _fuzzy_match(name_lower, g_name_lower):
+            reason = "similar_name"
+
+        if reason:
+            results.append(schemas.DuplicateCheckEntry(
+                id=g.id, name=g.name, status=g.status or "owned",
+                bgg_id=g.bgg_id, reason=reason,
+            ))
+
+    return schemas.DuplicateCheckResponse(duplicates=results[:5])
+
+
 @router.get("/{game_id}", response_model=schemas.GameResponse)
 def get_game(game_id: int, db: Session = Depends(get_db)):
     game = get_game_or_404(game_id, db)
@@ -1494,43 +1537,6 @@ def _validate_parent_game_id(parent_id: Optional[int], self_id: Optional[int], d
         raise HTTPException(status_code=400, detail="Cannot nest expansions — the target game is already an expansion")
 
 
-@router.get("/check-duplicate", response_model=schemas.DuplicateCheckResponse)
-def check_duplicate(
-    name: str = Query(..., min_length=1, max_length=255),
-    bgg_id: Optional[int] = Query(None),
-    db: Session = Depends(get_db),
-):
-    """Check for potential duplicate games before adding a new one."""
-    name_lower = name.strip().lower()
-    if not name_lower:
-        return schemas.DuplicateCheckResponse(duplicates=[])
-
-    # Fetch all games for comparison (collection is typically small enough)
-    games = db.query(models.Game.id, models.Game.name, models.Game.status, models.Game.bgg_id).all()
-
-    results: list[schemas.DuplicateCheckEntry] = []
-
-    for g in games:
-        reason = None
-        g_name_lower = (g.name or "").lower()
-
-        if g_name_lower == name_lower:
-            reason = "exact_name"
-        elif bgg_id is not None and g.bgg_id == bgg_id:
-            reason = "same_bgg_id"
-        elif _possible_expansion(name_lower, g_name_lower):
-            reason = "possible_expansion"
-        elif _fuzzy_match(name_lower, g_name_lower):
-            reason = "similar_name"
-
-        if reason:
-            results.append(schemas.DuplicateCheckEntry(
-                id=g.id, name=g.name, status=g.status or "owned",
-                bgg_id=g.bgg_id, reason=reason,
-            ))
-
-    return schemas.DuplicateCheckResponse(duplicates=results[:5])
-
 
 def _fuzzy_match(a: str, b: str) -> bool:
     """Simple fuzzy match: one contains the other (min 3 chars) or similarity ratio > 0.8."""
@@ -1559,6 +1565,7 @@ def _possible_expansion(name: str, candidate: str) -> bool:
 def create_game(
     game: schemas.GameCreate,
     background_tasks: BackgroundTasks,
+    allow_duplicate: bool = False,
     db: Session = Depends(get_db),
 ):
     _validate_parent_game_id(game.parent_game_id, None, db)
@@ -1568,24 +1575,25 @@ def create_game(
     tag_data = {k: data.pop(k) for k in list(data) if k in _TAG_FIELD_NAMES}
 
     # Duplicate check: match by BGG ID (if provided) or case-insensitive name
-    name = (data.get("name") or "").strip()
-    dup_filters = []
-    if data.get("bgg_id"):
-        dup_filters.append(models.Game.bgg_id == data["bgg_id"])
-    if name:
-        dup_filters.append(models.Game.name.ilike(name))
-    if dup_filters:
-        existing = db.query(models.Game).filter(or_(*dup_filters)).first()
-        if existing:
-            if data.get("bgg_id") and existing.bgg_id == data["bgg_id"]:
+    if not allow_duplicate:
+        name = (data.get("name") or "").strip()
+        dup_filters = []
+        if data.get("bgg_id"):
+            dup_filters.append(models.Game.bgg_id == data["bgg_id"])
+        if name:
+            dup_filters.append(func.lower(models.Game.name) == name.lower())
+        if dup_filters:
+            existing = db.query(models.Game).filter(or_(*dup_filters)).first()
+            if existing:
+                if data.get("bgg_id") and existing.bgg_id == data["bgg_id"]:
+                    raise HTTPException(
+                        status_code=409,
+                        detail=f"A game with BGG ID {data['bgg_id']} already exists ('{existing.name}').",
+                    )
                 raise HTTPException(
                     status_code=409,
-                    detail=f"A game with BGG ID {data['bgg_id']} already exists ('{existing.name}').",
+                    detail=f"A game named '{existing.name}' already exists.",
                 )
-            raise HTTPException(
-                status_code=409,
-                detail=f"A game named '{existing.name}' already exists.",
-            )
 
     db_game = models.Game(**data)
     db.add(db_game)

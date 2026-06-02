@@ -18,10 +18,20 @@ Cardboard uses [Semantic Versioning](https://semver.org/).
 
 - **Service worker cache name is now content-addressed** — the built `sw.js` derives its `CACHE_NAME` from the JS bundle hash (`cardboard-{hash}`), so every deploy creates a new cache name. Old service worker installs cannot serve stale JS or CSS because the asset filenames themselves change, eliminating the class of stale-cache bugs that required manual cache clearing.
 - **Virtual scroll DOM recycling** — when the rendered card count exceeds 3× the page size (180 cards), the oldest page of 60 cards is removed from the DOM. The removed height is measured before deletion and applied as `padding-top` so the scroll position does not jump. Browsers with scroll-anchoring handle this transparently; the padding is a fallback for those that do not. This caps DOM size at roughly 120–180 nodes regardless of collection size.
+- **`weekly_streak` renamed to `best_weekly_streak`** — the stats field held the best 52-week streak, not the current streak, so the name was misleading. Updated in `StatsResponse` schema, stats router, and frontend stats view.
 
 ### Fixed
 
 - **Unhandled server exceptions leaked raw error details** — any exception not explicitly caught by a route handler fell through to FastAPI's default handler. A new `@app.exception_handler(Exception)` middleware catches these, logs the full traceback server-side, and returns `{"detail": "Internal server error"}` with a 500 status code, ensuring no internal state is exposed to the client.
+- **`check-duplicate` endpoint unreachable (HTTP 422)** — `GET /api/games/check-duplicate` was registered after `GET /api/games/{game_id}`, so Starlette matched `check-duplicate` as a `game_id` parameter and failed int coercion with HTTP 422. The route is now defined before the catch-all so the server-side fuzzy / expansion / same-BGG-ID detection runs correctly.
+- **"Add it again anyway?" prompt was a dead end** — when the duplicate-check modal was confirmed, `create_game` unconditionally rejected the request with HTTP 409. The endpoint now accepts an `allow_duplicate` query parameter (sent by the frontend after user confirmation) that bypasses the duplicate check.
+- **`win_count` inconsistent between players list and detail** — the list endpoint counted any session whose `winner` string matched the player's name, while the detail stats counted only sessions the player was linked to as a participant. The list query now joins through `SessionPlayer` so both endpoints use the same definition.
+- **Single-game GET always reported `session_count: 0`** — `_attach_parent_name` (used by `get_game` and `get_shared_game`) never populated `session_count`, while the list path did. The field is now populated consistently for all game response paths.
+- **LIKE-wildcard collision in create dedupe check** — `Game.name.ilike(name)` treated `%` and `_` in titles as SQL wildcards. The check now uses `func.lower(Game.name) == name.lower()` for an exact case-insensitive match.
+- **`Subquery` passed to `.in_()` emitted SAWarning** — `target_sessions` (a subquery) was passed directly to `SessionPlayer.session_id.in_()`. It is now passed as `.in_(target_sessions.select())`.
+- **Theme flash (FOUC) on light-OS users with no saved choice** — the inline bootstrap script in `index.html` only applied light mode when `cardboard_theme === 'light'`, but `theme.js` follows OS preference when no manual choice exists. The bootstrap script now mirrors the OS-preference logic.
+- **README advertised a non-existent 3D-scan feature** — removed the "3D scan upload (USDZ/GLB)" claim from the features list and replaced the `scans/` directory with the real `avatars/` directory in the documented data tree.
+- **`DATABASE_URL` default mismatch in README** — the README listed `sqlite:////app/data/cardboard.db` (the Docker absolute path) as the default, but the code default is `sqlite:///./data/cardboard.db`. The README now matches the code.
 
 ---
 

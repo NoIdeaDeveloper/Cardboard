@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <script>(function(){try{var t=localStorage.getItem('cardboard_theme');if(t==='light')document.documentElement.setAttribute('data-theme','light');}catch(_){}})();</script>
+  <script>(function(){try{var t=localStorage.getItem('cardboard_theme'),s=localStorage.getItem('cardboard_theme_manual');if(t==='light'||(!s&&(!window.matchMedia||!window.matchMedia('(prefers-color-scheme: dark)').matches)))document.documentElement.setAttribute('data-theme','light');}catch(_){}})();</script>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>Cardboard</title>

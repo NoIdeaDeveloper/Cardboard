@@ -2062,7 +2062,7 @@ function buildStatsView(stats, games, prefs = {}, onPrefsChange = null, goals = 
   const avgSessionLen = stats.avg_session_minutes ? Math.round(stats.avg_session_minutes) : null;
   const topMechanicName = stats.top_mechanic || null;
   const _dailyStreak = stats.daily_streak || 0;
-  const _maxWeekStreak = stats.weekly_streak || 0;
+  const _maxWeekStreak = stats.best_weekly_streak || 0;
 
   const statDefs = [
     { label: 'Total Games',   value: totalGamesLabel, raw: true },

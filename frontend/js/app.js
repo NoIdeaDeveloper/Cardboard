@@ -3542,6 +3542,7 @@
       }
 
       // Duplicate / expansion guard: check backend for exact, similar, or same BGG ID
+      let allowDuplicate = false;
       try {
         const dupCheck = await API.checkDuplicate(payload.name, payload.bgg_id);
         if (dupCheck.duplicates && dupCheck.duplicates.length > 0) {
@@ -3567,6 +3568,7 @@
           }
           const proceed = await showConfirm(title, msg);
           if (!proceed) return;
+          allowDuplicate = true;
         }
       } catch (dupErr) {
         // API unavailable — fall back to a local exact-name check
@@ -3578,12 +3580,13 @@
             `"${localDup.name}" is already in your collection. Add it again anyway?`
           );
           if (!proceed) return;
+          allowDuplicate = true;
         }
       }
 
       try {
         await withLoading(submitBtn, async () => {
-          const created = await API.createGame(payload);
+          const created = await API.createGame(payload, allowDuplicate);
           if (file) {
             try {
               await API.uploadImage(created.id, file);

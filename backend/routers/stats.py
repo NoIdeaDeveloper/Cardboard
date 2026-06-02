@@ -646,7 +646,7 @@ def get_stats(db: Session = Depends(get_db)):
             max_weekly_streak = max(max_weekly_streak, run_weekly)
         else:
             run_weekly = 0
-    weekly_streak = max_weekly_streak
+    best_weekly_streak = max_weekly_streak
 
     # ── Top wishlist game (highest priority) ─────────────────────────────────
     wishlist_row = (
@@ -778,7 +778,7 @@ def get_stats(db: Session = Depends(get_db)):
         )
     if unplayed_with_top_mechanic > 0 and top_mechanic:
         health_notifications.append(f"You have {unplayed_with_top_mechanic} unplayed {top_mechanic} game{'s' if unplayed_with_top_mechanic > 1 else ''}")
-    if daily_streak == 0 and weekly_streak == 0 and total_sessions >= 10:
+    if daily_streak == 0 and best_weekly_streak == 0 and total_sessions >= 10:
         health_notifications.append("No plays recently — your streaks have reset")
     elif daily_streak > 0:
         health_notifications.append(f"Keep it going — you're on a {daily_streak}-day play streak!")
@@ -825,7 +825,7 @@ def get_stats(db: Session = Depends(get_db)):
         collection_health=collection_health,
         added_by_month_owned_only=added_by_month_owned_only,
         daily_streak=daily_streak,
-        weekly_streak=weekly_streak,
+        best_weekly_streak=best_weekly_streak,
         top_wishlist_game=top_wishlist_game,
         unplayed_with_top_mechanic=unplayed_with_top_mechanic,
         best_at_player_counts=best_at_player_counts,

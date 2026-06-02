@@ -89,7 +89,7 @@ Alternatively, install the **Compose Manager** plugin and use the `docker-compos
 - **Collection management** — add, edit, bulk-edit, and delete games with detailed fields (players, playtime, difficulty, rating, labels, categories, mechanics, designers, publishers, condition, purchase info, storage location)
 - **BGG integration** — search and auto-fill from BoardGameGeek; import collections (XML) and play history; parent/expansion linking
 - **Import** — CSV and BGG XML collection import
-- **Media** — cover images, multi-image photo gallery with captions, instruction PDF upload with inline viewer, 3D scan upload (USDZ/GLB) with AR and in-browser viewer
+- **Media** — cover images, multi-image photo gallery with captions, instruction PDF upload with inline viewer
 - **Play tracking** — log sessions with date, duration, players, winner, notes, and per-session rating; quick-log overlay on game cards; solo mode
 - **Player profiles** — per-player stats, win rates, top games, co-player leaderboard with head-to-head records
 - **Stats dashboard** — totals, most-played, player leaderboard, rating distribution, added/sessions-by-month charts, 52-week activity heatmap (scrolled to the current week on load), day-of-week breakdown, shelf of shame, collection value
@@ -110,7 +110,7 @@ Set via environment variables (or `.env` for Docker):
 | `DATA_PATH` | `./data` | Host path for the data bind mount |
 | `ALLOWED_ORIGINS` | `*` | CORS origins (set to your domain in production) |
 | `LOG_LEVEL` | `INFO` | Python log level |
-| `DATABASE_URL` | `sqlite:////app/data/cardboard.db` | SQLAlchemy connection string — only needed if using PostgreSQL or a custom path |
+| `DATABASE_URL` | `sqlite:///./data/cardboard.db` | SQLAlchemy connection string — only needed if using PostgreSQL or a custom path |
 | `FRONTEND_PATH` | `/app/frontend` | Path to the frontend assets — only needed if running the backend outside of Docker |
 
 ## Backups
@@ -125,7 +125,7 @@ data/
 ├── images/            # cover images
 ├── gallery/           # photo galleries
 ├── instructions/      # PDFs
-└── scans/             # 3D files (GLB/USDZ)
+└── avatars/           # player avatars
 ```
 
 ## Development

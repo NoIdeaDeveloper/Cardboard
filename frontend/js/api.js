@@ -124,7 +124,7 @@ const API = {
   },
   getGame:    (id)       => request('GET',    `/games/${id}`),
   getSimilarGames: (id) => request('GET',    `/games/${id}/similar`),
-  createGame: (data)     => request('POST',   '/games/', data),
+  createGame: (data, allowDuplicate = false) => request('POST', '/games/' + (allowDuplicate ? '?allow_duplicate=true' : ''), data),
   updateGame: (id, data) => request('PATCH',  `/games/${id}`, data),
   deleteGame: (id)       => request('DELETE', `/games/${id}`),
 
