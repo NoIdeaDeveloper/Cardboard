@@ -2108,6 +2108,207 @@ function buildCollectionValueSection(collectionValue, visible) {
   return el;
 }
 
+function buildCollectionSettingsModal(prefs, onPrefsChange) {
+  const SECTION_TOGGLES = [
+    ['show_status_pills',     'Status Filters',      'status_pills'],
+    ['show_collection_stats', 'Collection Stats',    'collection_stats'],
+    ['show_recently_played',  'Recently Played Shelf','recently_played'],
+    ['show_recommend_card',   'Play This Next',      'recommend_card'],
+    ['show_action_plan',      'Action Plan',         'action_plan'],
+    ['show_reminder_banner',  'Dust-Off Reminders',  'reminder_banner'],
+  ];
+  const TOOLBAR_TOGGLES = [
+    ['show_game_night_btn',   'Game Night Button'],
+    ['show_bulk_select',      'Bulk Select'],
+    ['show_expansions_btn',   'Show Expansions'],
+  ];
+
+  let currentPrefs = { ...prefs };
+
+  const gripSvg = `<svg viewBox="0 0 24 24" fill="currentColor" stroke="none">
+    <circle cx="9"  cy="5"  r="1.5"/><circle cx="15" cy="5"  r="1.5"/>
+    <circle cx="9"  cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/>
+    <circle cx="9"  cy="19" r="1.5"/><circle cx="15" cy="19" r="1.5"/>
+  </svg>`;
+
+  const sectionTogglesHtml = currentPrefs.section_order
+    .filter(key => SECTION_TOGGLES.some(([, , k]) => k === key))
+    .map(sectionKey => {
+      const entry = SECTION_TOGGLES.find(([, , k]) => k === sectionKey);
+      if (!entry) return '';
+      const [prefKey, label] = entry;
+      return `<div class="settings-modal-row" draggable="true" data-key="${sectionKey}">
+        <span class="drag-handle" aria-hidden="true">${gripSvg}</span>
+        <label class="settings-modal-toggle">
+          <input type="checkbox" data-pref="${prefKey}"${currentPrefs[prefKey] !== false ? ' checked' : ''}>
+          ${escapeHtml(label)}
+        </label>
+      </div>`;
+    }).join('');
+
+  const toolbarTogglesHtml = TOOLBAR_TOGGLES.map(([prefKey, label]) => {
+    return `<div class="settings-modal-row" data-key="${prefKey}">
+      <label class="settings-modal-toggle">
+        <input type="checkbox" data-pref="${prefKey}"${currentPrefs[prefKey] !== false ? ' checked' : ''}>
+        ${escapeHtml(label)}
+      </label>
+    </div>`;
+  }).join('');
+
+  const el = document.createElement('div');
+  el.className = 'collection-settings-modal-content';
+  el.innerHTML = `
+    <div class="modal-header">
+      <h2 id="collection-settings-title">Customize Collection Page</h2>
+      <button class="modal-close-btn" id="collection-settings-close" aria-label="Close settings">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <p class="settings-modal-desc">Toggle visibility and drag to reorder elements on your collection page.</p>
+    <div class="settings-modal-list" id="collection-settings-list">
+      ${sectionTogglesHtml}
+    </div>
+    <div class="settings-modal-divider"></div>
+    <span class="settings-modal-group-label">Toolbar</span>
+    <div class="settings-modal-list settings-modal-list-toolbar">
+      ${toolbarTogglesHtml}
+    </div>`;
+
+  const settingsList = el.querySelector('#collection-settings-list');
+
+  // Wire close button
+  el.querySelector('#collection-settings-close').addEventListener('click', () => {
+    closeCollectionSettingsModal();
+  });
+
+  // Wire all checkboxes (both section and toolbar toggles)
+  el.querySelectorAll('.settings-modal-row input[type="checkbox"]').forEach(input => {
+    input.addEventListener('change', () => {
+      const prefKey = input.dataset.pref;
+      currentPrefs = { ...currentPrefs, [prefKey]: input.checked };
+      if (onPrefsChange) onPrefsChange(currentPrefs);
+    });
+  });
+
+  // Drag-and-drop reordering (only on section toggles)
+  let dragSrcKey = null;
+
+  settingsList.querySelectorAll('.settings-modal-row').forEach(row => {
+    row.addEventListener('dragstart', e => {
+      dragSrcKey = row.dataset.key;
+      row.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+    });
+    row.addEventListener('dragend', () => {
+      row.classList.remove('dragging');
+      settingsList.querySelectorAll('.drag-over').forEach(r => r.classList.remove('drag-over'));
+    });
+    row.addEventListener('dragover', e => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      if (row.dataset.key !== dragSrcKey) row.classList.add('drag-over');
+    });
+    row.addEventListener('dragleave', () => row.classList.remove('drag-over'));
+    row.addEventListener('drop', e => {
+      e.preventDefault();
+      row.classList.remove('drag-over');
+      if (!dragSrcKey || dragSrcKey === row.dataset.key) return;
+
+      const srcRow = settingsList.querySelector(`[data-key="${dragSrcKey}"]`);
+      const rows = [...settingsList.children];
+      const srcIdx = rows.indexOf(srcRow);
+      const dstIdx = rows.indexOf(row);
+      settingsList.insertBefore(srcRow, srcIdx < dstIdx ? row.nextSibling : row);
+
+      // Build new order: interleave reordered toggle keys at their new positions,
+      // keeping non-toggle keys (toolbar, filters, games) at their original relative positions
+      const newToggleKeys = [...settingsList.querySelectorAll('[data-key]')].map(r => r.dataset.key);
+      const nonToggleKeys = currentPrefs.section_order.filter(k => !newToggleKeys.includes(k));
+      const toggleIter = newToggleKeys[Symbol.iterator]();
+      const newOrder = currentPrefs.section_order.map(k =>
+        newToggleKeys.includes(k) ? toggleIter.next().value : k
+      );
+
+      currentPrefs = { ...currentPrefs, section_order: newOrder };
+      if (onPrefsChange) onPrefsChange(currentPrefs);
+    });
+  });
+
+  return el;
+}
+
+function openCollectionSettingsModal(prefs, onPrefsChange) {
+  const modal = document.getElementById('collection-settings-modal');
+  const inner = document.getElementById('collection-settings-inner');
+  inner.innerHTML = '';
+  inner.appendChild(buildCollectionSettingsModal(prefs, onPrefsChange));
+  modal.style.display = 'flex';
+  document.body.style.overflow = 'hidden';
+  _collectionSettingsPrevFocus = document.activeElement;
+
+  requestAnimationFrame(() => {
+    modal.classList.add('open');
+    const focusables = [...modal.querySelectorAll(FOCUSABLE)]
+      .filter(el => el.offsetParent !== null);
+    if (focusables.length) focusables[0].focus();
+
+    // Trap Tab key within modal
+    _collectionSettingsTrapHandler = (e) => {
+      if (e.key !== 'Tab') return;
+      const els = [...modal.querySelectorAll(FOCUSABLE)]
+        .filter(el => el.offsetParent !== null);
+      if (!els.length) return;
+      const first = els[0], last = els[els.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    modal.addEventListener('keydown', _collectionSettingsTrapHandler);
+  });
+
+  // Close on backdrop click
+  const backdrop = document.getElementById('collection-settings-backdrop');
+  backdrop.onclick = () => closeCollectionSettingsModal();
+
+  // Close on Escape
+  _collectionSettingsEscHandler = (e) => {
+    if (e.key === 'Escape') closeCollectionSettingsModal();
+  };
+  document.addEventListener('keydown', _collectionSettingsEscHandler);
+}
+
+let _collectionSettingsPrevFocus = null;
+let _collectionSettingsTrapHandler = null;
+let _collectionSettingsEscHandler = null;
+
+function closeCollectionSettingsModal() {
+  const modal = document.getElementById('collection-settings-modal');
+  modal.classList.remove('open');
+
+  if (_collectionSettingsTrapHandler) {
+    modal.removeEventListener('keydown', _collectionSettingsTrapHandler);
+    _collectionSettingsTrapHandler = null;
+  }
+  if (_collectionSettingsEscHandler) {
+    document.removeEventListener('keydown', _collectionSettingsEscHandler);
+    _collectionSettingsEscHandler = null;
+  }
+  if (_collectionSettingsPrevFocus) {
+    _collectionSettingsPrevFocus.focus();
+    _collectionSettingsPrevFocus = null;
+  }
+
+  setTimeout(() => {
+    modal.style.display = 'none';
+    document.getElementById('collection-settings-inner').innerHTML = '';
+    document.body.style.overflow = '';
+  }, 200);
+}
+
 function buildStatsView(stats, games, prefs = {}, onPrefsChange = null, goals = []) {
   const SECTION_DEFAULTS = {
     show_summary: true, show_most_played: true, show_top_players: true,

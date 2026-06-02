@@ -494,6 +494,11 @@
     loadFromUrlParams();
     syncCollectionUI();
     syncFilterActiveBar();
+
+    // Load and apply collection display prefs (visibility + section order)
+    currentCollectionDisplayPrefs = loadCollectionDisplayPrefs();
+    applyCollectionDisplayPrefs(currentCollectionDisplayPrefs);
+
     // Load players for autocomplete (non-blocking)
     API.getPlayers().then(p => { state.players = p.map(pl => pl.name); state.playerObjects = p; }).catch(err => {
       console.warn('Failed to load players for autocomplete:', err);
@@ -829,6 +834,17 @@
         bulkToggle.setAttribute('aria-pressed', state.bulkMode);
         bulkToggle.setAttribute('data-tooltip', state.bulkMode ? 'Exit selection mode' : 'Select games for bulk actions');
         renderCollection();
+      });
+    }
+
+    const settingsBtn = document.getElementById('collection-settings-btn');
+    if (settingsBtn) {
+      settingsBtn.addEventListener('click', () => {
+        openCollectionSettingsModal(currentCollectionDisplayPrefs, (newPrefs) => {
+          currentCollectionDisplayPrefs = newPrefs;
+          applyCollectionDisplayPrefs(newPrefs);
+          saveCollectionDisplayPrefs(newPrefs);
+        });
       });
     }
   }
@@ -4106,6 +4122,68 @@
     try {
       localStorage.setItem(STATS_PREFS_KEY, JSON.stringify(newPrefs));
     } catch (_) { /* quota exceeded — preferences not saved, non-fatal */ }
+  }
+
+  // ===== Collection Display Prefs =====
+  const COLLECTION_DISPLAY_PREFS_KEY = 'cardboard_collection_display_prefs';
+  const COLLECTION_DISPLAY_PREFS_DEFAULTS = {
+    show_status_pills: true,
+    show_collection_stats: true,
+    show_recently_played: true,
+    show_recommend_card: true,
+    show_action_plan: true,
+    show_reminder_banner: true,
+    show_game_night_btn: true,
+    show_bulk_select: true,
+    show_expansions_btn: true,
+    section_order: ['toolbar', 'filters', 'status_pills', 'collection_stats',
+                    'recently_played', 'recommend_card', 'action_plan', 'reminder_banner', 'games'],
+  };
+
+  let currentCollectionDisplayPrefs = { ...COLLECTION_DISPLAY_PREFS_DEFAULTS };
+
+  function loadCollectionDisplayPrefs() {
+    try {
+      const merged = { ...COLLECTION_DISPLAY_PREFS_DEFAULTS, ...loadJsonFromStorage(COLLECTION_DISPLAY_PREFS_KEY, {}) };
+      const all = COLLECTION_DISPLAY_PREFS_DEFAULTS.section_order;
+      const valid = (merged.section_order || []).filter(k => all.includes(k));
+      merged.section_order = [...valid, ...all.filter(k => !valid.includes(k))];
+      return merged;
+    } catch { return { ...COLLECTION_DISPLAY_PREFS_DEFAULTS }; }
+  }
+
+  function saveCollectionDisplayPrefs(newPrefs) {
+    try {
+      localStorage.setItem(COLLECTION_DISPLAY_PREFS_KEY, JSON.stringify(newPrefs));
+    } catch (_) { /* quota exceeded — preferences not saved, non-fatal */ }
+  }
+
+  function applyCollectionDisplayPrefs(prefs) {
+    const toggles = [
+      ['show_status_pills',    'status-pills'],
+      ['show_collection_stats','collection-stats'],
+      ['show_recently_played', 'recently-played-shelf'],
+      ['show_recommend_card',  'recommend-card'],
+      ['show_action_plan',     'action-plan-card'],
+      ['show_reminder_banner', 'reminder-banner'],
+      ['show_bulk_select',     'bulk-select-toggle'],
+      ['show_expansions_btn',  'show-expansions-btn'],
+    ];
+    toggles.forEach(([prefKey, elId]) => {
+      const el = document.getElementById(elId);
+      if (el) el.style.display = prefs[prefKey] ? '' : 'none';
+    });
+    const gameNightBtn = document.getElementById('game-night-btn');
+    if (gameNightBtn) gameNightBtn.style.display = prefs.show_game_night_btn ? '' : 'none';
+
+    // Reorder collection sections
+    const container = document.getElementById('view-collection');
+    if (container) {
+      prefs.section_order.forEach(key => {
+        const section = container.querySelector(`[data-collection-section="${key}"]`);
+        if (section) container.appendChild(section);
+      });
+    }
   }
 
   const EXPORT_COLS = [
