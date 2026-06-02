@@ -252,6 +252,8 @@ class PlayerResponse(BaseModel):
     win_count: int = 0
     avatar_url: Optional[str] = None     # custom photo URL or preset SVG path, set server-side
     avatar_preset: Optional[str] = None  # active preset key, e.g. "meeple"
+    elo_rating: float = 1500.0
+    games_played: int = 0
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -289,6 +291,28 @@ class PlayerWinRateByMonth(BaseModel):
 class PlayerStreak(BaseModel):
     kind: str          # "W", "L", or "" if no decided sessions yet
     length: int        # consecutive results from most recent backwards
+
+
+class PlayerRankingResponse(BaseModel):
+    player_id: int
+    player_name: str
+    elo_rating: float
+    games_played: int
+    wins: int
+    win_rate: int  # 0-100 percent
+    avg_score: Optional[float] = None
+    avatar_url: Optional[str] = None
+    rank: int = 0
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class GameRankingResponse(BaseModel):
+    game_id: int
+    game_name: str
+    rankings: List[PlayerRankingResponse] = []
+
+    model_config = ConfigDict(from_attributes=True)
 
 
 class PlayerStatsResponse(BaseModel):
@@ -442,6 +466,8 @@ class TopPlayerEntry(BaseModel):
     win_count: int
     win_rate: int  # 0-100 percent
     avatar_url: Optional[str] = None
+    elo_rating: float = 1500.0
+    games_played: int = 0
 
 
 class SessionsByDowEntry(BaseModel):

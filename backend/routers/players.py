@@ -44,6 +44,8 @@ def _build_response(player: models.Player, session_count: int = 0, win_count: in
     r.win_count = win_count
     r.avatar_url = _avatar_url(player)
     r.avatar_preset = player.avatar_preset
+    r.elo_rating = player.elo_rating
+    r.games_played = player.games_played
     return r
 
 
@@ -229,6 +231,122 @@ def delete_player_avatar(player_id: int, db: Session = Depends(get_db)):
     player.avatar_preset = None
     db.commit()
     logger.info("Avatar cleared for player id=%d", player_id)
+
+
+# ── Rankings ─────────────────────────────────────────────────────────────────
+
+@router.get("/rankings", response_model=List[schemas.PlayerRankingResponse])
+def get_player_rankings(db: Session = Depends(get_db)):
+    """Return global player leaderboard sorted by Elo rating."""
+    players = (
+        db.query(models.Player)
+        .order_by(models.Player.elo_rating.desc())
+        .all()
+    )
+
+    # Pre-compute win counts and avg scores
+    player_ids = [p.id for p in players]
+    win_rows = (
+        db.query(models.Player.id, func.count(models.PlaySession.id).label("wins"))
+        .join(models.PlaySession, models.PlaySession.winner == models.Player.name)
+        .filter(models.Player.id.in_(player_ids), models.PlaySession.winner.isnot(None))
+        .group_by(models.Player.id)
+        .all()
+    ) if player_ids else []
+    win_by_id = {r.id: r.wins for r in win_rows}
+
+    avg_score_rows = (
+        db.query(models.SessionPlayer.player_id, func.avg(models.SessionPlayer.score).label("avg"))
+        .filter(models.SessionPlayer.player_id.in_(player_ids), models.SessionPlayer.score.isnot(None))
+        .group_by(models.SessionPlayer.player_id)
+        .all()
+    ) if player_ids else []
+    avg_score_by_id = {r.player_id: float(r.avg) for r in avg_score_rows}
+
+    results = []
+    for rank, player in enumerate(players, start=1):
+        wins = win_by_id.get(player.id, 0)
+        gp = player.games_played
+        win_rate = round(wins / gp * 100) if gp > 0 else 0
+        results.append(schemas.PlayerRankingResponse(
+            player_id=player.id,
+            player_name=player.name,
+            elo_rating=round(player.elo_rating, 1),
+            games_played=gp,
+            wins=wins,
+            win_rate=win_rate,
+            avg_score=round(avg_score_by_id.get(player.id, 0), 1) if player.id in avg_score_by_id else None,
+            avatar_url=_avatar_url(player),
+            rank=rank,
+        ))
+    return results
+
+
+@router.get("/{player_id}/rankings", response_model=List[schemas.PlayerRankingResponse])
+def get_player_game_rankings(player_id: int, db: Session = Depends(get_db)):
+    """Return per-game rankings for a specific player."""
+    player = get_player_or_404(player_id, db)
+
+    # Find all games this player has scored sessions for
+    game_rows = (
+        db.query(models.Game.id, models.Game.name)
+        .join(models.PlaySession, models.PlaySession.game_id == models.Game.id)
+        .join(models.SessionPlayer, models.SessionPlayer.session_id == models.PlaySession.id)
+        .filter(models.SessionPlayer.player_id == player_id)
+        .filter(models.SessionPlayer.score.isnot(None))
+        .distinct()
+        .all()
+    )
+
+    rankings = []
+    for game_id, game_name in game_rows:
+        # Get all players for this game with scored sessions, ordered by average score
+        player_rows = (
+            db.query(
+                models.Player.id,
+                models.Player.name,
+                models.Player.elo_rating,
+                models.Player.games_played,
+                func.count(models.SessionPlayer.session_id).label("session_count"),
+                func.avg(models.SessionPlayer.score).label("avg_score"),
+            )
+            .join(models.SessionPlayer, models.SessionPlayer.player_id == models.Player.id)
+            .join(models.PlaySession, models.PlaySession.id == models.SessionPlayer.session_id)
+            .filter(models.PlaySession.game_id == game_id)
+            .filter(models.SessionPlayer.score.isnot(None))
+            .group_by(models.Player.id, models.Player.name, models.Player.elo_rating, models.Player.games_played)
+            .order_by(func.avg(models.SessionPlayer.score).desc())
+            .all()
+        )
+
+        win_rows = (
+            db.query(models.Player.id, func.count(models.PlaySession.id).label("wins"))
+            .join(models.PlaySession, models.PlaySession.winner == models.Player.name)
+            .filter(models.PlaySession.game_id == game_id)
+            .filter(models.PlaySession.winner.isnot(None))
+            .group_by(models.Player.id)
+            .all()
+        )
+        win_by_id = {r.id: r.wins for r in win_rows}
+
+        for rank, row in enumerate(player_rows, start=1):
+            if row.id == player_id:
+                wins = win_by_id.get(row.id, 0)
+                win_rate = round(wins / row.session_count * 100) if row.session_count > 0 else 0
+                rankings.append(schemas.PlayerRankingResponse(
+                    player_id=row.id,
+                    player_name=row.name,
+                    elo_rating=round(row.elo_rating, 1),
+                    games_played=row.games_played,
+                    wins=wins,
+                    win_rate=win_rate,
+                    avg_score=round(float(row.avg_score), 1) if row.avg_score else None,
+                    avatar_url=_avatar_url(row),
+                    rank=rank,
+                ))
+                break
+
+    return rankings
 
 
 # ── Stats ────────────────────────────────────────────────────────────────────
@@ -484,3 +602,17 @@ def delete_player(player_id: int, db: Session = Depends(get_db)):
     db.delete(player)
     db.commit()
     logger.info("Player deleted: id=%d", player_id)
+
+
+# ── Admin / Maintenance ─────────────────────────────────────────────────────
+
+@router.post("/admin/recalculate-elo")
+def recalculate_all_elo(db: Session = Depends(get_db)):
+    """Recalculate Elo ratings for all players from scored session history."""
+    import elo_db
+    all_ids = {r.id for r in db.query(models.Player.id).all()}
+    if not all_ids:
+        return {"message": "No players to recalculate", "players_updated": 0}
+    elo_db.recalculate_elo_for_players(all_ids, db)
+    db.commit()
+    return {"message": "Elo recalculated", "players_updated": len(all_ids)}

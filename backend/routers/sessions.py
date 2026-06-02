@@ -10,6 +10,7 @@ from database import get_db
 import models
 import schemas
 from utils import get_game_or_404, get_session_or_404
+import elo_db
 
 logger = logging.getLogger("cardboard.sessions")
 router = APIRouter(tags=["sessions"])
@@ -130,6 +131,8 @@ def add_session(game_id: int, session: schemas.PlaySessionCreate, db: Session = 
 
     if session.player_names:
         _link_players(db_session.id, session.player_names, db, session.scores)
+        if session.scores:
+            elo_db.apply_elo_for_new_session(session.player_names, session.scores, db)
 
     _sync_last_played(game_id, db, commit=False)
     db.commit()
@@ -151,6 +154,14 @@ def add_session(game_id: int, session: schemas.PlaySessionCreate, db: Session = 
 def update_session(session_id: int, data: schemas.PlaySessionUpdate, db: Session = Depends(get_db)):
     db_session = get_session_or_404(session_id, db)
 
+    # Capture old players before _link_players clears the links
+    old_player_rows = (
+        db.query(models.SessionPlayer.player_id)
+        .filter(models.SessionPlayer.session_id == session_id)
+        .all()
+    )
+    old_player_ids = {r.player_id for r in old_player_rows}
+
     update_data = data.model_dump(exclude_unset=True)
     player_names = update_data.pop("player_names", None)
     scores = update_data.pop("scores", None)
@@ -159,6 +170,34 @@ def update_session(session_id: int, data: schemas.PlaySessionUpdate, db: Session
 
     if player_names is not None:
         _link_players(db_session.id, player_names, db, scores)
+    elif scores is not None:
+        # Update scores on existing SessionPlayer rows without replacing the player list
+        existing_rows = (
+            db.query(models.SessionPlayer)
+            .filter(models.SessionPlayer.session_id == session_id)
+            .all()
+        )
+        player_ids = [r.player_id for r in existing_rows]
+        name_map = {
+            p.id: p.name
+            for p in db.query(models.Player).filter(models.Player.id.in_(player_ids)).all()
+        }
+        for row in existing_rows:
+            name = name_map.get(row.player_id)
+            if name is not None:
+                row.score = scores.get(name)
+        db.flush()
+
+    # Recalculate Elo for all players who were in the old or new version of this session
+    new_player_rows = (
+        db.query(models.SessionPlayer.player_id)
+        .filter(models.SessionPlayer.session_id == session_id)
+        .all()
+    )
+    new_player_ids = {r.player_id for r in new_player_rows}
+    affected_ids = old_player_ids | new_player_ids
+    if affected_ids:
+        elo_db.recalculate_elo_for_players(affected_ids, db)
 
     _sync_last_played(db_session.game_id, db, commit=False)
     db.commit()
@@ -172,10 +211,22 @@ def update_session(session_id: int, data: schemas.PlaySessionUpdate, db: Session
 def delete_session(session_id: int, db: Session = Depends(get_db)):
     db_session = get_session_or_404(session_id, db)
 
+    # Capture players before delete so we can recalculate their Elo
+    old_player_rows = (
+        db.query(models.SessionPlayer.player_id)
+        .filter(models.SessionPlayer.session_id == session_id)
+        .all()
+    )
+    old_player_ids = {r.player_id for r in old_player_rows}
+
     game_id = db_session.game_id
     db.delete(db_session)
     db.flush()
     _sync_last_played(game_id, db, commit=False)
+
+    if old_player_ids:
+        elo_db.recalculate_elo_for_players(old_player_ids, db)
+
     db.commit()
     logger.info("Session deleted: id=%d game_id=%d", session_id, game_id)
 
@@ -194,6 +245,8 @@ def add_bulk_session(body: schemas.BulkSessionCreate, db: Session = Depends(get_
         db.flush()
         if body.player_names:
             _link_players(db_session.id, body.player_names, db, body.scores)
+            if body.scores:
+                elo_db.apply_elo_for_new_session(body.player_names, body.scores, db)
         _sync_last_played(game_id, db, commit=False)
         db_sessions.append((game_id, db_session))
     db.commit()

@@ -90,6 +90,8 @@ class Player(Base):
     date_added = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
     avatar_ext = Column(String(10), nullable=True)    # e.g. ".jpg" when a custom photo is uploaded
     avatar_preset = Column(String(50), nullable=True)  # e.g. "meeple" when a default SVG is chosen
+    elo_rating = Column(Float, default=1500.0, nullable=False)
+    games_played = Column(Integer, default=0, nullable=False)
 
 
 class SessionPlayer(Base):

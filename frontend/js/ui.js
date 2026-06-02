@@ -742,6 +742,10 @@ function buildModalContent(game, sessions, onSave, onDelete, onAddSession, onDel
               <label for="session-player-names">Player Names</label>
               <input type="text" id="session-player-names" class="form-input" placeholder="Alice, Bob, Carol" autocomplete="off">
             </div>
+            <div class="form-group full-width" id="session-scores-group" style="display:none">
+              <label>Scores</label>
+              <div class="session-scores-row" id="session-scores-container"></div>
+            </div>
             <div class="form-group full-width">
               <label for="session-winner">Winner</label>
               <input type="text" id="session-winner" class="form-input" placeholder="optional" autocomplete="off">
@@ -764,6 +768,68 @@ function buildModalContent(game, sessions, onSave, onDelete, onAddSession, onDel
         </div>
         <div class="sessions-list" id="sessions-list">${buildSessionsHtml(sessions)}</div>
       </div>
+
+      ${(() => {
+        // Per-game player leaderboard computed from sessions
+        const playerMap = {};
+        let hasAnyScores = false;
+        for (const s of sessions) {
+          const scores = s.player_scores || {};
+          if (Object.keys(scores).length) hasAnyScores = true;
+          for (const p of (s.players || [])) {
+            if (!playerMap[p]) playerMap[p] = { name: p, plays: 0, wins: 0, totalScore: 0, scoredPlays: 0 };
+            playerMap[p].plays += 1;
+            if (s.winner === p) playerMap[p].wins += 1;
+            if (scores[p] != null) {
+              playerMap[p].totalScore += scores[p];
+              playerMap[p].scoredPlays += 1;
+            }
+          }
+        }
+        const players = Object.values(playerMap).map(p => ({
+          ...p,
+          avgScore: p.scoredPlays ? Math.round(p.totalScore / p.scoredPlays) : null,
+          winRate: p.plays ? Math.round((p.wins / p.plays) * 100) : 0,
+        }));
+        if (!players.length) return '';
+        // Sort by avgScore desc (if any scores exist), then wins, then plays
+        players.sort((a, b) => {
+          if (hasAnyScores) {
+            const as = a.avgScore ?? -1;
+            const bs = b.avgScore ?? -1;
+            if (bs !== as) return bs - as;
+          }
+          if (b.wins !== a.wins) return b.wins - a.wins;
+          return b.plays - a.plays;
+        });
+        const maxScore = hasAnyScores ? Math.max(...players.map(p => p.avgScore || 0)) : 0;
+        const maxWins = Math.max(...players.map(p => p.wins));
+        return `
+          <div class="modal-section game-leaderboard-section">
+            <div class="section-label">Game Leaderboard</div>
+            <div class="most-played-list">
+              ${players.map((p, i) => {
+                const barMax = hasAnyScores ? maxScore : maxWins;
+                const barVal = hasAnyScores ? (p.avgScore || 0) : p.wins;
+                const pct = barMax ? Math.round((barVal / barMax) * 100) : 0;
+                const statLabel = hasAnyScores
+                  ? `Avg ${p.avgScore} · ${p.wins}W · ${p.plays}P`
+                  : `${p.wins}W · ${p.plays}P · ${p.winRate}% WR`;
+                return `
+                  <div class="most-played-item player-leaderboard-item">
+                    <div class="most-played-rank">${i + 1}</div>
+                    <div class="most-played-info">
+                      <div class="most-played-name">${escapeHtml(p.name)}</div>
+                      <div class="stat-bar-track"><div class="stat-bar-fill" style="width:0%" data-target-width="${pct}%"></div></div>
+                    </div>
+                    <div class="most-played-count">
+                      <span class="player-leaderboard-meta">${statLabel}</span>
+                    </div>
+                  </div>`;
+              }).join('')}
+            </div>
+          </div>`;
+      })()}
 
       ${editFieldsSectionHtml}
 
@@ -825,7 +891,32 @@ function buildModalContent(game, sessions, onSave, onDelete, onAddSession, onDel
     el.querySelector('#session-notes').value = '';
     const rp = el.querySelector('#session-rating-picker');
     if (rp) { rp.dataset.value = '0'; rp.querySelectorAll('.star-btn').forEach(b => b.classList.remove('active')); }
+    const scGroup = el.querySelector('#session-scores-group');
+    const scContainer = el.querySelector('#session-scores-container');
+    if (scGroup) scGroup.style.display = 'none';
+    if (scContainer) scContainer.innerHTML = '';
   });
+
+  // Dynamic score inputs for log form
+  function renderLogScoreInputs() {
+    const namesRaw = el.querySelector('#session-player-names').value.trim();
+    const names = namesRaw ? namesRaw.split(',').map(n => n.trim()).filter(Boolean) : [];
+    const scGroup = el.querySelector('#session-scores-group');
+    const scContainer = el.querySelector('#session-scores-container');
+    if (!scGroup || !scContainer) return;
+    if (names.length < 2) {
+      scGroup.style.display = 'none';
+      scContainer.innerHTML = '';
+      return;
+    }
+    scGroup.style.display = '';
+    scContainer.innerHTML = names.map(name => `
+      <div class="session-score-field">
+        <span class="session-score-label">${escapeHtml(name)}</span>
+        <input type="number" class="form-input session-score-input" data-player="${escapeHtml(name)}" placeholder="0" min="0">
+      </div>`).join('');
+  }
+  el.querySelector('#session-player-names').addEventListener('input', renderLogScoreInputs);
 
   // Star picker interaction (log form)
   const _ratingPicker = el.querySelector('#session-rating-picker');
@@ -860,6 +951,11 @@ function buildModalContent(game, sessions, onSave, onDelete, onAddSession, onDel
       : null;
 
     const _rp = el.querySelector('#session-rating-picker');
+    const scores = {};
+    el.querySelectorAll('#session-scores-container .session-score-input').forEach(inp => {
+      const val = parseInt(inp.value, 10);
+      if (!isNaN(val)) scores[inp.dataset.player] = val;
+    });
     const sessionData = {
       played_at:        dateVal,
       player_count:     parseInt(el.querySelector('#session-players').value, 10) || null,
@@ -868,6 +964,7 @@ function buildModalContent(game, sessions, onSave, onDelete, onAddSession, onDel
       notes:            el.querySelector('#session-notes').value.trim() || null,
       session_rating:   _rp ? (parseInt(_rp.dataset.value, 10) || null) : null,
       player_names:     playerNames,
+      scores:           Object.keys(scores).length ? scores : null,
     };
 
     withLoading(sessionSubmitBtn, () => onAddSession(game.id, sessionData, (created) => {
@@ -896,6 +993,10 @@ function buildModalContent(game, sessions, onSave, onDelete, onAddSession, onDel
       el.querySelector('#session-notes').value = '';
       const _rpr = el.querySelector('#session-rating-picker');
       if (_rpr) { _rpr.dataset.value = '0'; _rpr.querySelectorAll('.star-btn').forEach(b => b.classList.remove('active')); }
+      const scGroup = el.querySelector('#session-scores-group');
+      const scContainer = el.querySelector('#session-scores-container');
+      if (scGroup) scGroup.style.display = 'none';
+      if (scContainer) scContainer.innerHTML = '';
       sessionForm.style.display = 'none';
       sessionToggle.textContent = '+ Log Session';
     }), 'Logging…');
@@ -948,6 +1049,10 @@ function buildModalContent(game, sessions, onSave, onDelete, onAddSession, onDel
             <label>Player Names</label>
             <input type="text" class="form-input se-player-names" placeholder="Alice, Bob, Carol" autocomplete="off">
           </div>
+          <div class="form-group full-width se-scores-group" style="display:none">
+            <label>Scores</label>
+            <div class="session-scores-row se-scores-container"></div>
+          </div>
           <div class="form-group full-width">
             <label>Winner</label>
             <input type="text" class="form-input se-winner" placeholder="optional" autocomplete="off">
@@ -968,6 +1073,28 @@ function buildModalContent(game, sessions, onSave, onDelete, onAddSession, onDel
           <button class="btn btn-ghost btn-sm se-cancel">Cancel</button>
         </div>`;
 
+      function renderEditScoreInputs(prefillScores = {}) {
+        const namesRaw = form.querySelector('.se-player-names').value.trim();
+        const names = namesRaw ? namesRaw.split(',').map(n => n.trim()).filter(Boolean) : [];
+        const scGroup = form.querySelector('.se-scores-group');
+        const scContainer = form.querySelector('.se-scores-container');
+        if (!scGroup || !scContainer) return;
+        if (names.length < 2) {
+          scGroup.style.display = 'none';
+          scContainer.innerHTML = '';
+          return;
+        }
+        scGroup.style.display = '';
+        scContainer.innerHTML = names.map(name => {
+          const val = prefillScores[name] != null ? prefillScores[name] : '';
+          return `
+            <div class="session-score-field">
+              <span class="session-score-label">${escapeHtml(name)}</span>
+              <input type="number" class="form-input session-score-input" data-player="${escapeHtml(name)}" placeholder="0" min="0" value="${val !== '' ? val : ''}">
+            </div>`;
+        }).join('');
+      }
+
       if (s) {
         form.querySelector('.se-date').value = s.played_at || '';
         form.querySelector('.se-players').value = s.player_count || '';
@@ -980,7 +1107,11 @@ function buildModalContent(game, sessions, onSave, onDelete, onAddSession, onDel
           seRp.dataset.value = s.session_rating;
           seRp.querySelectorAll('.star-btn').forEach(b => b.classList.toggle('active', parseInt(b.dataset.val, 10) <= s.session_rating));
         }
+        renderEditScoreInputs(s.player_scores || {});
+      } else {
+        renderEditScoreInputs();
       }
+      form.querySelector('.se-player-names').addEventListener('input', () => renderEditScoreInputs());
 
       // Star picker interaction (edit form)
       const seRatingPicker = form.querySelector('.se-rating');
@@ -1023,6 +1154,11 @@ function buildModalContent(game, sessions, onSave, onDelete, onAddSession, onDel
         const playerNamesRaw = form.querySelector('.se-player-names').value.trim();
         const playerNames = playerNamesRaw ? playerNamesRaw.split(',').map(n => n.trim()).filter(Boolean) : null;
         const seRp = form.querySelector('.se-rating');
+        const scores = {};
+        form.querySelectorAll('.se-scores-container .session-score-input').forEach(inp => {
+          const val = parseInt(inp.value, 10);
+          if (!isNaN(val)) scores[inp.dataset.player] = val;
+        });
         const data = {
           played_at:        dateVal,
           player_count:     parseInt(form.querySelector('.se-players').value, 10) || null,
@@ -1031,6 +1167,7 @@ function buildModalContent(game, sessions, onSave, onDelete, onAddSession, onDel
           notes:            form.querySelector('.se-notes').value.trim() || null,
           session_rating:   seRp ? (parseInt(seRp.dataset.value, 10) || null) : null,
           player_names:     playerNames,
+          scores:           Object.keys(scores).length ? scores : null,
         };
         withLoading(saveBtn, () => onUpdateSession(sessionId, game.id, data, (updated) => {
           form.remove();
@@ -2487,15 +2624,16 @@ function buildStatsView(stats, games, prefs = {}, onPrefsChange = null, goals = 
       </div>
     </div>` : '';
 
-  // Player Leaderboard
+  // Player Leaderboard (Elo-based)
   const topPlayers = stats.top_players || [];
   const topPlayersHtml = topPlayers.length ? `
     <div class="stats-section" data-section="top_players"${currentPrefs.show_top_players === false ? ' style="display:none"' : ''}>
-      ${_sectionInfoHeader('Player Leaderboard', 'About Player Leaderboard', '<p class="health-info-intro">Players ranked by the number of sessions they\'ve participated in. Win counts and win rates are shown where wins were recorded.</p>')}
+      ${_sectionInfoHeader('Player Leaderboard', 'About Player Leaderboard', '<p class="health-info-intro">Players ranked by Elo skill rating. Ratings start at 1500 and adjust after every scored session based on who you beat and who beats you. Win counts and session totals are shown for context.</p>')}
       <div class="most-played-list">
         ${topPlayers.map((p, i) => {
-          const maxSessions = topPlayers[0].session_count;
-          const pct = Math.round((p.session_count / maxSessions) * 100);
+          const maxElo = Math.max(topPlayers[0].elo_rating || 1500, 1500);
+          const minElo = 1000;
+          const pct = Math.round(((p.elo_rating - minElo) / (maxElo - minElo)) * 100);
           return `
             <div class="most-played-item player-leaderboard-item" data-player-id="${p.player_id}" data-player-name="${escapeHtml(p.player_name)}" style="cursor:pointer" title="View ${escapeHtml(p.player_name)}'s sessions">
               <div class="most-played-rank">${i + 1}</div>
@@ -2505,8 +2643,8 @@ function buildStatsView(stats, games, prefs = {}, onPrefsChange = null, goals = 
                 <div class="stat-bar-track"><div class="stat-bar-fill" style="width:0%" data-target-width="${pct}%"></div></div>
               </div>
               <div class="most-played-count">
-                <span>${pluralize(p.session_count, 'play')}</span>
-                ${p.win_count > 0 ? `<span class="player-leaderboard-wins">· ${p.win_count}W (${p.win_rate}%)</span>` : ''}
+                <span class="player-elo">${Math.round(p.elo_rating)}</span>
+                <span class="player-leaderboard-meta">${pluralize(p.session_count, 'play')} · ${p.win_rate}% WR</span>
               </div>
             </div>`;
         }).join('')}

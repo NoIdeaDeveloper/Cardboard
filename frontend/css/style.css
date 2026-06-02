@@ -2650,6 +2650,33 @@ input[type="date"] { color-scheme: dark; }
   color: var(--accent);
 }
 
+.session-scores-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.session-score-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1 1 80px;
+  min-width: 60px;
+  max-width: 120px;
+}
+
+.session-score-label {
+  font-size: 0.7rem;
+  color: var(--text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.session-score-input {
+  min-width: 0;
+}
+
 .session-delete {
   background: none;
   border: none;
@@ -4001,6 +4028,21 @@ img.ql-chip-avatar { display: block; object-fit: cover; }
   font-size: 0.72rem;
   color: var(--accent);
   margin-left: 4px;
+}
+
+.player-elo {
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: var(--accent);
+  display: block;
+  text-align: right;
+}
+
+.player-leaderboard-meta {
+  font-size: 0.7rem;
+  color: var(--text-3);
+  display: block;
+  text-align: right;
 }
 
 /* Most played */

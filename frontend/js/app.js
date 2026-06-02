@@ -434,7 +434,8 @@
     if (sortDirBtn) {
       sortDirBtn.dataset.dir = state.sortDir;
       sortDirBtn.setAttribute('data-tooltip', state.sortDir === 'asc' ? 'Sort ascending' : 'Sort descending');
-      sortDirBtn.querySelector('svg')?.style.transform = state.sortDir === 'desc' ? 'scaleY(-1)' : '';
+      const _svg = sortDirBtn.querySelector('svg');
+      if (_svg) _svg.style.transform = state.sortDir === 'desc' ? 'scaleY(-1)' : '';
     }
 
     if (gridBtn) gridBtn.classList.toggle('active', state.viewMode === 'grid');
@@ -773,7 +774,8 @@
       state.sortDir = state.sortDir === 'asc' ? 'desc' : 'asc';
       sortDirBtn.dataset.dir = state.sortDir;
       sortDirBtn.setAttribute('data-tooltip', state.sortDir === 'asc' ? 'Sort ascending' : 'Sort descending');
-      sortDirBtn.querySelector('svg')?.style.transform = state.sortDir === 'desc' ? 'scaleY(-1)' : '';
+      const _svg = sortDirBtn.querySelector('svg');
+      if (_svg) _svg.style.transform = state.sortDir === 'desc' ? 'scaleY(-1)' : '';
       saveCollectionPrefs();
       syncUrlParams();
       loadCollection();
@@ -2341,7 +2343,7 @@
         solo: !!last.solo,
       };
       if (last.player_scores && Object.keys(last.player_scores).length) {
-        payload.player_scores = last.player_scores;
+        payload.scores = last.player_scores;
       }
       await handleAddSession(game.id, payload, () => {
         renderCollection();
