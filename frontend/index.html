@@ -50,67 +50,69 @@
     <!-- Collection View -->
     <section id="view-collection" class="view active">
       <h1 class="sr-only">My Board Game Collection</h1>
-      <div class="collection-toolbar" data-collection-section="toolbar">
-        <div class="search-wrapper">
-          <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-          <input type="text" id="collection-search" class="search-input" placeholder="Search your collection…" autocomplete="off" aria-label="Search your collection" />
-            <button class="clear-search" id="clear-search" data-tooltip="Clear search (Esc)" style="display:none">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      <div data-collection-section="toolbar">
+        <div class="collection-toolbar">
+          <div class="search-wrapper">
+            <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+            <input type="text" id="collection-search" class="search-input" placeholder="Search your collection…" autocomplete="off" aria-label="Search your collection" />
+              <button class="clear-search" id="clear-search" data-tooltip="Clear search (Esc)" style="display:none">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+            <div class="search-autocomplete" id="search-autocomplete" style="display:none"></div>
+          </div>
+          <button class="icon-btn filter-toggle-btn" id="filter-toggle-btn" data-tooltip="Show filters" aria-label="Toggle filters" aria-pressed="false">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+            <span class="filter-badge" id="filter-badge" style="display:none"></span>
           </button>
-          <div class="search-autocomplete" id="search-autocomplete" style="display:none"></div>
-        </div>
-        <button class="icon-btn filter-toggle-btn" id="filter-toggle-btn" data-tooltip="Show filters" aria-label="Toggle filters" aria-pressed="false">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
-          <span class="filter-badge" id="filter-badge" style="display:none"></span>
-        </button>
-        <div class="toolbar-controls">
-          <div class="sort-group">
-            <label class="sort-label" for="sort-by">Sort by</label>
-            <select id="sort-by" class="select">
-              <option value="name">Name</option>
-              <option value="date_added">Date Added</option>
-              <option value="user_rating">My Rating</option>
-              <option value="min_playtime">Playtime</option>
-              <option value="min_players">Players</option>
-              <option value="difficulty">Difficulty</option>
-              <option value="last_played">Last Played</option>
-              <option value="purchase_date">Purchase Date</option>
-              <option value="purchase_price">Purchase Price</option>
-              <option value="priority">Wishlist Priority</option>
-              <option value="heat_level">Hot</option>
-            </select>
-            <button id="sort-dir" class="icon-btn sort-dir-btn" data-tooltip="Sort ascending" aria-label="Toggle sort direction" data-dir="asc">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 6h18M7 12h10M11 18h2"/></svg>
+          <div class="toolbar-controls">
+            <div class="sort-group">
+              <label class="sort-label" for="sort-by">Sort by</label>
+              <select id="sort-by" class="select">
+                <option value="name">Name</option>
+                <option value="date_added">Date Added</option>
+                <option value="user_rating">My Rating</option>
+                <option value="min_playtime">Playtime</option>
+                <option value="min_players">Players</option>
+                <option value="difficulty">Difficulty</option>
+                <option value="last_played">Last Played</option>
+                <option value="purchase_date">Purchase Date</option>
+                <option value="purchase_price">Purchase Price</option>
+                <option value="priority">Wishlist Priority</option>
+                <option value="heat_level">Hot</option>
+              </select>
+              <button id="sort-dir" class="icon-btn sort-dir-btn" data-tooltip="Sort ascending" aria-label="Toggle sort direction" data-dir="asc">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 6h18M7 12h10M11 18h2"/></svg>
+              </button>
+            </div>
+            <button class="icon-btn" id="show-expansions-btn" data-tooltip="Show expansions" aria-label="Show expansions" aria-pressed="false">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h7"/><path d="M15 15l3 3 3-3"/><line x1="18" y1="18" x2="18" y2="12"/></svg>
+            </button>
+            <div class="view-toggle" role="group" aria-label="View mode">
+              <button class="icon-btn active" id="view-grid" data-tooltip="Grid view" aria-label="Grid view">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+              </button>
+              <button class="icon-btn" id="view-list" data-tooltip="List view" aria-label="List view">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+              </button>
+            </div>
+            <button class="icon-btn" id="bulk-select-toggle" data-tooltip="Select games for bulk actions" aria-label="Select games for bulk actions" aria-pressed="false">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="4" height="4" rx="1"/><polyline points="9 7 15 7"/><rect x="3" y="11" width="4" height="4" rx="1"/><polyline points="9 13 21 13"/><rect x="3" y="17" width="4" height="4" rx="1"/><polyline points="9 19 17 19"/></svg>
+            </button>
+            <button class="icon-btn" id="collection-settings-btn" data-tooltip="Customize page" aria-label="Customize collection page">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
             </button>
           </div>
-          <button class="icon-btn" id="show-expansions-btn" data-tooltip="Show expansions" aria-label="Show expansions" aria-pressed="false">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h7"/><path d="M15 15l3 3 3-3"/><line x1="18" y1="18" x2="18" y2="12"/></svg>
-          </button>
-          <div class="view-toggle" role="group" aria-label="View mode">
-            <button class="icon-btn active" id="view-grid" data-tooltip="Grid view" aria-label="Grid view">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
-            </button>
-            <button class="icon-btn" id="view-list" data-tooltip="List view" aria-label="List view">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
-            </button>
-          </div>
-          <button class="icon-btn" id="bulk-select-toggle" data-tooltip="Select games for bulk actions" aria-label="Select games for bulk actions" aria-pressed="false">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="4" height="4" rx="1"/><polyline points="9 7 15 7"/><rect x="3" y="11" width="4" height="4" rx="1"/><polyline points="9 13 21 13"/><rect x="3" y="17" width="4" height="4" rx="1"/><polyline points="9 19 17 19"/></svg>
-          </button>
-          <button class="icon-btn" id="collection-settings-btn" data-tooltip="Customize page" aria-label="Customize collection page">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
-          </button>
         </div>
-      </div>
 
-      <!-- Active filter indicator -->
-      <div id="filter-active-bar" class="filter-active-bar" style="display:none">
-        <span id="filter-active-label" class="filter-active-label"></span>
-        <button class="filter-active-share" id="filter-active-share" aria-label="Copy filtered link">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
-          <span>Share</span>
-        </button>
-        <button class="filter-active-clear" id="filter-active-clear">Clear filters</button>
+        <!-- Active filter indicator -->
+        <div id="filter-active-bar" class="filter-active-bar" style="display:none">
+          <span id="filter-active-label" class="filter-active-label"></span>
+          <button class="filter-active-share" id="filter-active-share" aria-label="Copy filtered link">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+            <span>Share</span>
+          </button>
+          <button class="filter-active-clear" id="filter-active-clear">Clear filters</button>
+        </div>
       </div>
 
       <!-- Dust-off reminder banner -->
@@ -153,62 +155,64 @@
       </div>
 
       <div id="collection-stats" class="collection-stats" role="status" aria-live="polite" data-collection-section="collection_stats"></div>
-      <div id="bulk-toolbar" class="bulk-toolbar" style="display:none" role="toolbar" aria-label="Bulk actions"></div>
 
       <div id="recently-played-shelf" style="display:none" data-collection-section="recently_played"></div>
 
-      <div id="games-container" class="games-grid" data-collection-section="games">
-        <div class="loading-spinner">
-          <div class="spinner"></div>
-          <p>Loading your collection…</p>
+      <div data-collection-section="games">
+        <div id="bulk-toolbar" class="bulk-toolbar" style="display:none" role="toolbar" aria-label="Bulk actions"></div>
+        <div id="games-container" class="games-grid">
+          <div class="loading-spinner">
+            <div class="spinner"></div>
+            <p>Loading your collection…</p>
+          </div>
         </div>
-      </div>
 
-      <div id="empty-state" class="empty-state" style="display:none">
-        <img src="cardboard-icon.png" alt="" class="empty-app-icon" aria-hidden="true">
-        <h2 class="empty-headline">Welcome to Cardboard</h2>
-        <p class="empty-tagline">Your personal board game library. Track what you own, how often you play, and what to play next.</p>
-        <div class="empty-feature-grid">
-          <div class="empty-feature-card">
-            <div class="empty-feature-icon">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+        <div id="empty-state" class="empty-state" style="display:none">
+          <img src="cardboard-icon.png" alt="" class="empty-app-icon" aria-hidden="true">
+          <h2 class="empty-headline">Welcome to Cardboard</h2>
+          <p class="empty-tagline">Your personal board game library. Track what you own, how often you play, and what to play next.</p>
+          <div class="empty-feature-grid">
+            <div class="empty-feature-card">
+              <div class="empty-feature-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+              </div>
+              <div class="empty-feature-text">
+                <strong>Your Collection</strong>
+                <span>Catalog games with ratings, notes, and cover art</span>
+              </div>
             </div>
-            <div class="empty-feature-text">
-              <strong>Your Collection</strong>
-              <span>Catalog games with ratings, notes, and cover art</span>
+            <div class="empty-feature-card">
+              <div class="empty-feature-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+              </div>
+              <div class="empty-feature-text">
+                <strong>Play Tracking</strong>
+                <span>Log sessions, track players, and see your history</span>
+              </div>
+            </div>
+            <div class="empty-feature-card">
+              <div class="empty-feature-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+              </div>
+              <div class="empty-feature-text">
+                <strong>Stats &amp; Insights</strong>
+                <span>Charts, trends, and personalized recommendations</span>
+              </div>
+            </div>
+            <div class="empty-feature-card">
+              <div class="empty-feature-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22"><path d="M12 2l2 7h7l-5.5 4 2 7L12 16l-5.5 4 2-7L3 9h7z"/></svg>
+              </div>
+              <div class="empty-feature-text">
+                <strong>Game Night</strong>
+                <span>Get smart suggestions based on your mood and group size</span>
+              </div>
             </div>
           </div>
-          <div class="empty-feature-card">
-            <div class="empty-feature-icon">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-            </div>
-            <div class="empty-feature-text">
-              <strong>Play Tracking</strong>
-              <span>Log sessions, track players, and see your history</span>
-            </div>
+          <div class="empty-actions">
+            <button class="btn btn-primary" data-view="add">Add your first game</button>
+            <button class="btn btn-secondary" id="empty-bgg-import-btn">Import from BGG</button>
           </div>
-          <div class="empty-feature-card">
-            <div class="empty-feature-icon">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
-            </div>
-            <div class="empty-feature-text">
-              <strong>Stats &amp; Insights</strong>
-              <span>Charts, trends, and personalized recommendations</span>
-            </div>
-          </div>
-          <div class="empty-feature-card">
-            <div class="empty-feature-icon">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22"><path d="M12 2l2 7h7l-5.5 4 2 7L12 16l-5.5 4 2-7L3 9h7z"/></svg>
-            </div>
-            <div class="empty-feature-text">
-              <strong>Game Night</strong>
-              <span>Get smart suggestions based on your mood and group size</span>
-            </div>
-          </div>
-        </div>
-        <div class="empty-actions">
-          <button class="btn btn-primary" data-view="add">Add your first game</button>
-          <button class="btn btn-secondary" id="empty-bgg-import-btn">Import from BGG</button>
         </div>
       </div>
     </section>

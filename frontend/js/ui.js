@@ -2123,7 +2123,7 @@ function buildCollectionSettingsModal(prefs, onPrefsChange) {
     ['show_expansions_btn',   'Show Expansions'],
   ];
 
-  let currentPrefs = { ...prefs };
+  let currentPrefs = { ...prefs, section_order: [...prefs.section_order] };
 
   const gripSvg = `<svg viewBox="0 0 24 24" fill="currentColor" stroke="none">
     <circle cx="9"  cy="5"  r="1.5"/><circle cx="15" cy="5"  r="1.5"/>
@@ -2208,7 +2208,10 @@ function buildCollectionSettingsModal(prefs, onPrefsChange) {
       e.dataTransfer.dropEffect = 'move';
       if (row.dataset.key !== dragSrcKey) row.classList.add('drag-over');
     });
-    row.addEventListener('dragleave', () => row.classList.remove('drag-over'));
+    row.addEventListener('dragleave', e => {
+      // Only remove highlight if actually leaving the row (not entering a child)
+      if (!row.contains(e.relatedTarget)) row.classList.remove('drag-over');
+    });
     row.addEventListener('drop', e => {
       e.preventDefault();
       row.classList.remove('drag-over');
@@ -2223,7 +2226,6 @@ function buildCollectionSettingsModal(prefs, onPrefsChange) {
       // Build new order: interleave reordered toggle keys at their new positions,
       // keeping non-toggle keys (toolbar, filters, games) at their original relative positions
       const newToggleKeys = [...settingsList.querySelectorAll('[data-key]')].map(r => r.dataset.key);
-      const nonToggleKeys = currentPrefs.section_order.filter(k => !newToggleKeys.includes(k));
       const toggleIter = newToggleKeys[Symbol.iterator]();
       const newOrder = currentPrefs.section_order.map(k =>
         newToggleKeys.includes(k) ? toggleIter.next().value : k
@@ -2237,8 +2239,16 @@ function buildCollectionSettingsModal(prefs, onPrefsChange) {
   return el;
 }
 
+let _collectionSettingsPrevFocus = null;
+let _collectionSettingsTrapHandler = null;
+let _collectionSettingsEscHandler = null;
+
 function openCollectionSettingsModal(prefs, onPrefsChange) {
   const modal = document.getElementById('collection-settings-modal');
+  // Guard: if already open, close first to clean up handlers
+  if (modal.classList.contains('open')) {
+    closeCollectionSettingsModal();
+  }
   const inner = document.getElementById('collection-settings-inner');
   inner.innerHTML = '';
   inner.appendChild(buildCollectionSettingsModal(prefs, onPrefsChange));
@@ -2281,12 +2291,10 @@ function openCollectionSettingsModal(prefs, onPrefsChange) {
   document.addEventListener('keydown', _collectionSettingsEscHandler);
 }
 
-let _collectionSettingsPrevFocus = null;
-let _collectionSettingsTrapHandler = null;
-let _collectionSettingsEscHandler = null;
-
 function closeCollectionSettingsModal() {
   const modal = document.getElementById('collection-settings-modal');
+  if (!modal.classList.contains('open')) return;
+
   modal.classList.remove('open');
 
   if (_collectionSettingsTrapHandler) {
