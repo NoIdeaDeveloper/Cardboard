@@ -3370,6 +3370,7 @@
     if (data.description)   f('m-description').value = data.description;
     if (data.image_url)     { f('m-image-url').value = data.image_url; f('m-image-url').dispatchEvent(new Event('input')); }
     if (data.categories)    f('m-categories').value = (JSON.parse(data.categories || '[]')).join(', ');
+    if (data.mechanics)     f('m-mechanics').value = (JSON.parse(data.mechanics || '[]')).join(', ');
     if (data.designers)     f('m-designers').value = (JSON.parse(data.designers || '[]')).join(', ');
     if (data.publishers)    f('m-publishers').value = (JSON.parse(data.publishers || '[]')).join(', ');
     if (data.bgg_id)        { const bggEl = f('m-bgg-id'); if (bggEl) bggEl.value = data.bgg_id; }
