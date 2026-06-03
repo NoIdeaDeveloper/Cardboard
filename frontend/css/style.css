@@ -367,6 +367,7 @@ button.footer-link {
 /* ===== Main Layout ===== */
 .main {
   flex: 1;
+  width: 100%;
   max-width: 1400px;
   margin: 0 auto;
   padding: 28px 24px;
@@ -1269,6 +1270,13 @@ button.footer-link {
     opacity: 1;
     transform: translateY(0);
     pointer-events: auto;
+  }
+  /* Hover tooltips never appear on touch devices; suppress them so their
+     laid-out (opacity:0) pseudo-elements can't spill past the viewport edge
+     and create a phantom horizontal scroll. */
+  .icon-btn[data-tooltip]::after,
+  .icon-btn[data-tooltip]::before {
+    content: none;
   }
 }
 
