@@ -4277,6 +4277,8 @@
     const sectionsGrid = statsView.querySelector('#stats-sections');
     if (!sectionsGrid) return;
 
+    const allowedKeys = new Set(STATS_PREFS_DEFAULTS.section_order);
+
     const gripSvg = `<svg viewBox="0 0 24 24" fill="currentColor" stroke="none" aria-hidden="true">
       <circle cx="9" cy="5" r="1.5"/><circle cx="15" cy="5" r="1.5"/>
       <circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/>
@@ -4287,7 +4289,7 @@
 
     sectionsGrid.querySelectorAll('.stats-section').forEach(section => {
       const key = section.dataset.section;
-      if (!key) return;
+      if (!key || !allowedKeys.has(key)) return;
       if (section.hasAttribute('data-has-handle')) return;
       section.setAttribute('draggable', 'true');
 
@@ -4331,13 +4333,13 @@
         const srcSection = sectionsGrid.querySelector(`[data-section="${dragSrcKey}"]`);
         if (!srcSection) return;
 
-        const sections = [...sectionsGrid.querySelectorAll('[data-section]')];
+        const sections = [...sectionsGrid.querySelectorAll('[data-section]')].filter(s => allowedKeys.has(s.dataset.section));
         const srcIdx = sections.indexOf(srcSection);
         const dstIdx = sections.indexOf(section);
         sectionsGrid.insertBefore(srcSection, srcIdx < dstIdx ? section.nextSibling : section);
 
         // Persist new order
-        const newOrder = [...sectionsGrid.querySelectorAll('[data-section]')].map(s => s.dataset.section);
+        const newOrder = [...sectionsGrid.querySelectorAll('[data-section]')].filter(s => allowedKeys.has(s.dataset.section)).map(s => s.dataset.section);
         saveStatsPrefs({ ...loadStatsPrefs(), section_order: newOrder });
       });
     });
@@ -4602,17 +4604,22 @@
         prefs.added_by_month_include_wishlist = wishlistToggle.checked;
         saveStatsPrefs(prefs);
         const chart = statsView.querySelector('#added-by-month-chart');
-        if (chart) chart.innerHTML = buildAddedByMonthFromEntries(
-          wishlistToggle.checked ? (stats.added_by_month || []) : (stats.added_by_month_owned_only || [])
-        );
+        if (chart) {
+          chart.innerHTML = buildAddedByMonthFromEntries(
+            wishlistToggle.checked ? (stats.added_by_month || []) : (stats.added_by_month_owned_only || [])
+          );
+          chart.querySelectorAll('.stat-bar-fill[data-target-width]').forEach(bar => {
+            bar.style.width = bar.dataset.targetWidth;
+          });
+        }
       });
     }
     const bucketFilters = {
-      '1\u20132':  r => r <= 2,
-      '3\u20134':  r => r > 2 && r <= 4,
-      '5\u20136':  r => r > 4 && r <= 6,
-      '7\u20138':  r => r > 6 && r <= 8,
-      '9\u201310': r => r > 8,
+      '1\u20132':  r => r < 3,
+      '3\u20134':  r => r >= 3 && r < 5,
+      '5\u20136':  r => r >= 5 && r < 7,
+      '7\u20138':  r => r >= 7 && r < 9,
+      '9\u201310': r => r >= 9,
     };
 
     statsView.addEventListener('click', e => {
