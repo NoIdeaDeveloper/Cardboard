@@ -6443,6 +6443,7 @@ img.player-profile-avatar { display: block; }
 }
 
 /* ===== Collection Settings Modal ===== */
+#collection-settings-modal { z-index: 210; }
 .collection-settings-modal-content .modal-header {
   display: flex;
   align-items: center;

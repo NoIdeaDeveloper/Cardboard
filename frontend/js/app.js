@@ -145,13 +145,13 @@
   }
   function setActionPlanCompleted(taskId) {
     const completed = getActionPlanCompleted();
-    const today = new Date().toISOString().slice(0, 10);
+    const today = new Date().toLocaleDateString('en-CA');
     completed[taskId] = today;
     localStorage.setItem(ACTION_PLAN_KEY, JSON.stringify(completed));
   }
   function isActionPlanCompletedToday(taskId) {
     const completed = getActionPlanCompleted();
-    return completed[taskId] === new Date().toISOString().slice(0, 10);
+    return completed[taskId] === new Date().toLocaleDateString('en-CA');
   }
 
   function renderActionPlan() {
@@ -161,7 +161,7 @@
     if (!cs) { container.style.display = 'none'; return; }
 
     const tasks = [];
-    const today = new Date().toISOString().slice(0, 10);
+    const today = new Date().toLocaleDateString('en-CA');
 
     if (cs.play_pct !== undefined && cs.play_pct < 50 && cs.total_owned >= 5) {
       const unplayed = state.games.filter(g => g.status === 'owned' && !g.session_count).slice(0, 1);
@@ -198,7 +198,7 @@
       tasks.push({
         id: 'rate_recent',
         title: `Rate <strong>${escapeHtml(unratedRecent[0].name)}</strong> — you played it but haven't rated it`,
-        action: () => { openGameDetail(unratedRecent[0], 'edit'); },
+        action: () => { openGameModal(unratedRecent[0], 'edit'); },
         actionLabel: 'Rate',
       });
     }
@@ -275,7 +275,7 @@
       container.style.display = 'flex';
       container.querySelector('[data-recommend-play]')?.addEventListener('click', () => {
         const game = state.games.find(x => x.id === g.id);
-        if (game) openGameDetail(game, 'log');
+        if (game) openGameModal(game, 'log');
       });
       container.querySelector('[data-recommend-skip]')?.addEventListener('click', () => skipRecommend(g.id));
     } catch (err) {
@@ -309,7 +309,7 @@
       banner.style.display = 'flex';
       banner.querySelector('[data-reminder-log]')?.addEventListener('click', () => {
         const game = state.games.find(g => g.id === n.id);
-        if (game) openGameDetail(game, 'log');
+        if (game) openGameModal(game, 'log');
       });
       banner.querySelector('[data-reminder-dismiss]')?.addEventListener('click', () => dismissReminder(n.id));
       return;
@@ -529,7 +529,7 @@
       if (!isNaN(_gameId)) {
         const _openWhenReady = () => {
           const g = state.games.find(x => x.id === _gameId);
-          if (g) { openGameDetail(g); }
+          if (g) { openGameModal(g); }
           else if (state.serverTotal > 0 && state.games.length >= state.serverTotal) {
             return;
           } else {
@@ -912,11 +912,11 @@
 
   // ===== Weekly Summary Toast =====
   function _maybeShowWeeklySummary() {
-    const today = new Date().toISOString().split('T')[0];
+    const today = new Date().toLocaleDateString('en-CA');
     const lastShown = localStorage.getItem('cardboard_weekly_toast_date');
     if (lastShown === today) return;
 
-    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toLocaleDateString('en-CA');
     const recentGames = state.games.filter(g => g.last_played && g.last_played >= sevenDaysAgo);
     if (!recentGames.length) return;
 
@@ -1115,8 +1115,7 @@
   async function openBulkSessionModal() {
     const ids = [...state.selectedGameIds];
     if (!ids.length) return;
-    const modal = document.getElementById('game-modal');
-    const inner = document.getElementById('modal-inner');
+    const inner = document.createElement('div');
     inner.innerHTML = `
       <div class="modal-content-panel">
         <div class="modal-panel-header">
@@ -1129,7 +1128,7 @@
           <div class="form-grid">
             <div class="form-group">
               <label class="form-label" for="bs-date">Date</label>
-              <input type="date" id="bs-date" class="form-input" value="${new Date().toISOString().slice(0,10)}">
+              <input type="date" id="bs-date" class="form-input" value="${new Date().toLocaleDateString('en-CA')}">
             </div>
             <div class="form-group">
               <label class="form-label" for="bs-duration">Duration (min)</label>
@@ -1143,13 +1142,8 @@
           <button class="btn btn-primary" id="bs-submit" style="margin-top:16px;width:100%">Log Session</button>
         </div>
       </div>`;
-    modal.style.display = 'flex';
-    document.body.style.overflow = 'hidden';
-    requestAnimationFrame(() => modal.classList.add('open'));
-    inner.querySelector('#bulk-session-close').addEventListener('click', () => {
-      modal.classList.remove('open');
-      setTimeout(() => { modal.style.display = 'none'; document.body.style.overflow = ''; }, 200);
-    });
+    openModal(inner);
+    inner.querySelector('#bulk-session-close').addEventListener('click', closeModal);
     inner.querySelector('#bs-submit').addEventListener('click', async () => {
       const body = {
         game_ids: ids,
@@ -1161,9 +1155,8 @@
         await API.bulkSession(body);
         showToast(`Session logged for ${pluralize(ids.length, 'game')}`, 'success');
         state.selectedGameIds.clear();
+        closeModal();
         loadCollection();
-        modal.classList.remove('open');
-        setTimeout(() => { modal.style.display = 'none'; document.body.style.overflow = ''; }, 200);
         renderBulkToolbar();
       } catch (err) {
         showToast(classifyError(err), 'error');
@@ -1748,6 +1741,8 @@
   }
 
   async function openGameModal(game, mode = 'view', onBack = null) {
+    const isLogMode = mode === 'log';
+    const effectiveMode = isLogMode ? 'view' : mode;
     const [sessResult, imgResult] = await Promise.allSettled([
       API.getSessions(game.id),
       API.getImages(game.id),
@@ -1761,7 +1756,7 @@
         updateGameInState(freshGame.id, freshGame);
       }
       const fresh = state.games.find(g => g.id === game.id) || freshGame || game;
-      openGameModal(fresh, 'view', onBack);
+      openGameModal(fresh, isLogMode ? 'log' : 'view', onBack);
     };
 
     const onShareGame = async () => {
@@ -1773,10 +1768,10 @@
       return `${window.location.origin}/share.html?token=${permanent.token}&game=${game.id}`;
     };
 
-    const navIdx = mode === 'view' ? _findGameNavIndex(game.id) : -1;
+    const navIdx = effectiveMode === 'view' ? _findGameNavIndex(game.id) : -1;
     const prevGame = navIdx > 0 ? state.games[navIdx - 1] : null;
     const nextGame = navIdx >= 0 && navIdx < state.games.length - 1 ? state.games[navIdx + 1] : null;
-    const navInfo = mode === 'view' ? {
+    const navInfo = effectiveMode === 'view' ? {
       prevGame,
       nextGame,
       onPrev: prevGame ? () => openGameModal(prevGame, 'view') : null,
@@ -1793,7 +1788,7 @@
       handleUploadGalleryImage, handleDeleteGalleryImage, handleReorderGalleryImages,
       handleAddGalleryImageFromUrl,
       handleUpdateGalleryImageCaption,
-      mode, onSwitchToEdit, onSwitchToView,
+      effectiveMode, onSwitchToEdit, onSwitchToView,
       state.games,
       (targetGame) => openGameModal(targetGame, 'view', () => openGameModal(game, 'view', onBack)),
       onShareGame,
@@ -1811,12 +1806,22 @@
       if (hero) hero.appendChild(backBtn);
     }
 
-    activeModal = { game, mode };
+    activeModal = { game, mode: effectiveMode };
     openModal(contentEl);
+    if (isLogMode) {
+      requestAnimationFrame(() => {
+        const sessionForm = document.getElementById('log-session-form');
+        const sessionToggle = document.getElementById('log-session-toggle');
+        if (sessionForm && sessionToggle) {
+          sessionForm.style.display = 'block';
+          sessionToggle.textContent = '− Cancel';
+        }
+      });
+    }
   }
 
   function openQuickLogSession(game) {
-    const today = new Date().toISOString().split('T')[0];
+    const today = new Date().toLocaleDateString('en-CA');
     openCompactQuickLog(game, null, today);
   }
 
@@ -1825,7 +1830,7 @@
     const existing = document.querySelector('.ql-compact-popover');
     if (existing) { existing.remove(); return; }
 
-    const todayStr = today || new Date().toISOString().split('T')[0];
+    const todayStr = today || new Date().toLocaleDateString('en-CA');
     const popover = document.createElement('div');
     popover.className = 'ql-compact-popover';
     popover.innerHTML = `
@@ -1946,7 +1951,7 @@
   }
 
   function openQuickLogSessionFull(game, presetDate) {
-    const today = presetDate || new Date().toISOString().split('T')[0];
+    const today = presetDate || new Date().toLocaleDateString('en-CA');
     const overlay = document.createElement('div');
     overlay.className = 'quick-log-overlay';
     overlay.innerHTML = `
@@ -2019,13 +2024,13 @@
 
     document.body.appendChild(overlay);
     requestAnimationFrame(() => overlay.classList.add('open'));
-    document.body.style.overflow = 'hidden';
+    pushModalOpen();
     overlay.querySelector('#ql-date').focus();
 
     function close() {
       document.removeEventListener('keydown', onKeyDown);
       overlay.classList.remove('open');
-      setTimeout(() => { overlay.remove(); document.body.style.overflow = ''; }, 200);
+      setTimeout(() => { overlay.remove(); popModalOpen(); }, 200);
     }
 
     function onKeyDown(e) {
@@ -2190,8 +2195,8 @@
     try {
       const updated = await API.updateGame(gameId, payload);
       showToast('Changes saved!', 'success');
-      activeModal = null;
       closeModal();
+      activeModal = null;
       updateGameInState(gameId, updated);
       renderCollection();
       refreshStatsBackground();
@@ -2210,8 +2215,8 @@
     try {
       const deletedGame = state.games.find(g => g.id === gameId);
       await API.deleteGame(gameId);
-      activeModal = null;
       closeModal();
+      activeModal = null;
       state.games = state.games.filter(g => g.id !== gameId);
       renderCollection();
       refreshStatsBackground();
@@ -2284,7 +2289,7 @@
     const game = state.games.find(g => g.id === gameId);
     const prevCount = game ? (game.session_count ?? 0) : 0;
     const prevLastPlayed = game ? game.last_played : null;
-    const playedAt = sessionData.played_at || new Date().toISOString().split('T')[0];
+    const playedAt = sessionData.played_at || new Date().toLocaleDateString('en-CA');
     if (game) {
       updateGameInState(gameId, {
         session_count: prevCount + 1,
@@ -2353,7 +2358,7 @@
         return;
       }
       const last = sessions.reduce((a, b) => a.played_at > b.played_at ? a : b);
-      const today = new Date().toISOString().split('T')[0];
+      const today = new Date().toLocaleDateString('en-CA');
       const payload = {
         played_at: today,
         player_count: last.player_count,
@@ -2544,9 +2549,11 @@
       const tag = e.target.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
       if (e.target.isContentEditable) return;
+      if (e.target.closest('.base-game-dropdown')) return;
+      if (e.target.closest('#game-modal')) return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
 
-      if (e.key === 'Escape' && state.bulkMode) {
+      if (e.key === 'Escape' && state.bulkMode && !document.getElementById('game-modal').classList.contains('open')) {
         state.bulkMode = false;
         state.selectedGameIds.clear();
         _lastBulkClickedId = null;
@@ -2620,8 +2627,7 @@
   }
 
   function openExportModal() {
-    const modal = document.getElementById('game-modal');
-    const inner = document.getElementById('modal-inner');
+    const inner = document.createElement('div');
     inner.innerHTML = `
       <div class="modal-content-panel">
         <div class="modal-panel-header">
@@ -2643,13 +2649,8 @@
           </div>
         </div>
       </div>`;
-    modal.style.display = 'flex';
-    document.body.style.overflow = 'hidden';
-    requestAnimationFrame(() => modal.classList.add('open'));
-    inner.querySelector('#export-modal-close').addEventListener('click', () => {
-      modal.classList.remove('open');
-      setTimeout(() => { modal.style.display = 'none'; document.body.style.overflow = ''; }, 200);
-    });
+    openModal(inner);
+    inner.querySelector('#export-modal-close').addEventListener('click', closeModal);
     inner.querySelector('#export-json-btn').addEventListener('click', () => {
       window.open('/api/games/export/json', '_blank');
     });
@@ -2669,7 +2670,7 @@
 
     inner.innerHTML = '<p style="padding:1rem;opacity:0.6">Loading…</p>';
     modal.style.display = 'flex';
-    document.body.style.overflow = 'hidden';
+    pushModalOpen();
 
     let trapHandler = null;
     requestAnimationFrame(() => {
@@ -2691,7 +2692,7 @@
       modal.classList.remove('open');
       if (trapHandler) { modal.removeEventListener('keydown', trapHandler); trapHandler = null; }
       if (prevFocus) prevFocus.focus();
-      setTimeout(() => { modal.style.display = 'none'; document.body.style.overflow = ''; }, 200);
+      setTimeout(() => { modal.style.display = 'none'; popModalOpen(); }, 200);
       backdrop.removeEventListener('click', close);
       document.removeEventListener('keydown', onKeyDown);
     }
@@ -3941,7 +3942,7 @@
       </div>`;
 
     modal.style.display = 'flex';
-    document.body.style.overflow = 'hidden';
+    pushModalOpen();
 
     let trapHandler = null;
     requestAnimationFrame(() => {
@@ -3966,7 +3967,7 @@
       if (trapHandler) { modal.removeEventListener('keydown', trapHandler); trapHandler = null; }
       document.removeEventListener('keydown', _gnEscape);
       if (prevFocus) prevFocus.focus();
-      setTimeout(() => { modal.style.display = 'none'; document.body.style.overflow = ''; }, 200);
+      setTimeout(() => { modal.style.display = 'none'; popModalOpen(); }, 200);
       backdrop.removeEventListener('click', close);
     }
 

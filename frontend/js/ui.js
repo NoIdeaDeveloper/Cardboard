@@ -312,10 +312,10 @@ function buildModalContent(game, sessions, onSave, onDelete, onAddSession, onDel
   const _navBarHtml = navInfo && (navInfo.prevGame || navInfo.nextGame)
     ? `<div class="modal-nav-bar">
         ${navInfo.prevGame
-          ? `<button class="modal-nav-btn modal-nav-prev" aria-label="Previous: ${escapeHtml(navInfo.prevGame.name)}" title="Previous: ${escapeHtml(navInfo.prevGame.name)}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg><span class="modal-nav-label">${escapeHtml(navInfo.prevGame.name)}</span></button>`
+          ? `<button class="modal-nav-btn modal-nav-prev" aria-label="Previous: ${escapeHtml(navInfo.prevGame.name)}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg><span class="modal-nav-label">${escapeHtml(navInfo.prevGame.name)}</span></button>`
           : `<span></span>`}
         ${navInfo.nextGame
-          ? `<button class="modal-nav-btn modal-nav-next" aria-label="Next: ${escapeHtml(navInfo.nextGame.name)}" title="Next: ${escapeHtml(navInfo.nextGame.name)}"><span class="modal-nav-label">${escapeHtml(navInfo.nextGame.name)}</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg></button>`
+          ? `<button class="modal-nav-btn modal-nav-next" aria-label="Next: ${escapeHtml(navInfo.nextGame.name)}"><span class="modal-nav-label">${escapeHtml(navInfo.nextGame.name)}</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg></button>`
           : `<span></span>`}
       </div>`
     : '';
@@ -728,7 +728,7 @@ function buildModalContent(game, sessions, onSave, onDelete, onAddSession, onDel
           <div class="session-form-grid">
             <div class="form-group">
               <label for="session-date">Date</label>
-              <input type="date" id="session-date" class="form-input" value="${new Date().toISOString().split('T')[0]}" autocomplete="off">
+              <input type="date" id="session-date" class="form-input" value="${new Date().toLocaleDateString('en-CA')}" autocomplete="off">
             </div>
             <div class="form-group">
               <label for="session-players">Players</label>
@@ -883,7 +883,7 @@ function buildModalContent(game, sessions, onSave, onDelete, onAddSession, onDel
   el.querySelector('#session-cancel').addEventListener('click', () => {
     sessionForm.style.display = 'none';
     sessionToggle.textContent = '+ Log Session';
-    el.querySelector('#session-date').value = '';
+    el.querySelector('#session-date').value = new Date().toLocaleDateString('en-CA');
     el.querySelector('#session-players').value = '';
     el.querySelector('#session-duration').value = '';
     el.querySelector('#session-player-names').value = '';
@@ -904,6 +904,13 @@ function buildModalContent(game, sessions, onSave, onDelete, onAddSession, onDel
     const scGroup = el.querySelector('#session-scores-group');
     const scContainer = el.querySelector('#session-scores-container');
     if (!scGroup || !scContainer) return;
+
+    // Preserve existing scores before rebuilding
+    const savedScores = {};
+    scContainer.querySelectorAll('.session-score-input').forEach(inp => {
+      if (inp.value !== '') savedScores[inp.dataset.player] = inp.value;
+    });
+
     if (names.length < 2) {
       scGroup.style.display = 'none';
       scContainer.innerHTML = '';
@@ -913,7 +920,7 @@ function buildModalContent(game, sessions, onSave, onDelete, onAddSession, onDel
     scContainer.innerHTML = names.map(name => `
       <div class="session-score-field">
         <span class="session-score-label">${escapeHtml(name)}</span>
-        <input type="number" class="form-input session-score-input" data-player="${escapeHtml(name)}" placeholder="0" min="0">
+        <input type="number" class="form-input session-score-input" data-player="${escapeHtml(name)}" placeholder="0" min="0" value="${escapeHtml(savedScores[name] || '')}">
       </div>`).join('');
   }
   el.querySelector('#session-player-names').addEventListener('input', renderLogScoreInputs);
@@ -985,7 +992,7 @@ function buildModalContent(game, sessions, onSave, onDelete, onAddSession, onDel
         </button>`;
       list.prepend(item);
 
-      el.querySelector('#session-date').value = '';
+    el.querySelector('#session-date').value = new Date().toLocaleDateString('en-CA');
       el.querySelector('#session-players').value = '';
       el.querySelector('#session-duration').value = '';
       el.querySelector('#session-player-names').value = '';
@@ -1246,8 +1253,10 @@ function buildModalContent(game, sessions, onSave, onDelete, onAddSession, onDel
     const similarSection = el.querySelector('#similar-games-section');
     const similarList    = el.querySelector('#similar-games-list');
     if (similarSection && similarList && typeof API !== 'undefined') {
-      API.getSimilarGames(game.id).then(similar => {
+      const similarGameId = game.id;
+      API.getSimilarGames(similarGameId).then(similar => {
         if (!similar || !similar.length) return;
+        if (!similarSection.isConnected) return;
         similarSection.style.display = '';
         similarList.innerHTML = similar.map(g => `
           <button class="similar-game-chip" data-game-id="${g.id}" type="button">
@@ -1308,7 +1317,7 @@ function buildModalContent(game, sessions, onSave, onDelete, onAddSession, onDel
 
     // Today button
     el.querySelector('#today-btn').addEventListener('click', () => {
-      el.querySelector('#last-played-input').value = new Date().toISOString().split('T')[0];
+      el.querySelector('#last-played-input').value = new Date().toLocaleDateString('en-CA');
     });
 
     // Base game picker
@@ -1790,13 +1799,26 @@ const FOCUSABLE = 'button:not([disabled]),[href],input:not([disabled]),select:no
 
 let _modalPrevFocus = null;
 let _modalTrapHandler = null;
+let _modalCloseTimeout = null;
+let _modalOpenCount = 0;
 
 function openModal(contentEl) {
   const inner = document.getElementById('modal-inner');
   inner.innerHTML = '';
   inner.appendChild(contentEl);
   const modal = document.getElementById('game-modal');
+
+  // Cancel any pending close from a previous closeModal() call
+  if (_modalCloseTimeout) { clearTimeout(_modalCloseTimeout); _modalCloseTimeout = null; }
+
+  // Remove previous trap handler if openModal is called again before closeModal
+  if (_modalTrapHandler) {
+    modal.removeEventListener('keydown', _modalTrapHandler);
+    _modalTrapHandler = null;
+  }
+
   modal.style.display = 'flex';
+  _modalOpenCount++;
   document.body.style.overflow = 'hidden';
   _modalPrevFocus = document.activeElement;
 
@@ -1840,11 +1862,19 @@ function closeModal() {
     _modalPrevFocus = null;
   }
 
-  setTimeout(() => {
+  _modalCloseTimeout = setTimeout(() => {
+    _modalCloseTimeout = null;
     modal.style.display = 'none';
     document.getElementById('modal-inner').innerHTML = '';
-    document.body.style.overflow = '';
+    _modalOpenCount = Math.max(0, _modalOpenCount - 1);
+    if (_modalOpenCount === 0) document.body.style.overflow = '';
   }, 200);
+}
+
+function pushModalOpen() { _modalOpenCount++; document.body.style.overflow = 'hidden'; }
+function popModalOpen() {
+  _modalOpenCount = Math.max(0, _modalOpenCount - 1);
+  if (_modalOpenCount === 0) document.body.style.overflow = '';
 }
 
 // ===== Gallery Lightbox =====
@@ -1900,21 +1930,22 @@ function openGalleryLightbox(images, startIndex = 0) {
   });
 
   function onKey(e) {
+    e.stopPropagation();
     if (e.key === 'ArrowLeft'  && multi) show(current - 1);
     else if (e.key === 'ArrowRight' && multi) show(current + 1);
     else if (e.key === 'Escape') close();
   }
-  document.addEventListener('keydown', onKey);
+  document.addEventListener('keydown', onKey, true);
 
   const prevOverflow = document.body.style.overflow;
   function close() {
     document.removeEventListener('keydown', onKey);
-    document.body.style.overflow = prevOverflow;
+    popModalOpen();
     overlay.remove();
   }
 
   show(startIndex);
-  document.body.style.overflow = 'hidden';
+  pushModalOpen();
   document.body.appendChild(overlay);
 }
 
@@ -2253,7 +2284,7 @@ function openCollectionSettingsModal(prefs, onPrefsChange) {
   inner.innerHTML = '';
   inner.appendChild(buildCollectionSettingsModal(prefs, onPrefsChange));
   modal.style.display = 'flex';
-  document.body.style.overflow = 'hidden';
+  pushModalOpen();
   _collectionSettingsPrevFocus = document.activeElement;
 
   requestAnimationFrame(() => {
@@ -2313,7 +2344,7 @@ function closeCollectionSettingsModal() {
   setTimeout(() => {
     modal.style.display = 'none';
     document.getElementById('collection-settings-inner').innerHTML = '';
-    document.body.style.overflow = '';
+    popModalOpen();
   }, 200);
 }
 
