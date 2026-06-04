@@ -1848,7 +1848,7 @@ if ('serviceWorker' in navigator) {
         <div class="quick-log-form">
           <div class="quick-log-field">
             <label for="ql-date">Date</label>
-            <input type="date" id="ql-date" class="form-input" value="${today}" autocomplete="off">
+            <input type="date" id="ql-date" class="form-input" value="${escapeHtml(today)}" autocomplete="off">
           </div>
           <div class="quick-log-field">
             <label for="ql-players">Players</label>
