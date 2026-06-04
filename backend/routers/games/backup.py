@@ -244,6 +244,20 @@ def export_static_html(db: Session = Depends(get_db)):
             1,
         )
 
+    # ── 4b. Inline theme-init.js and share.js ────────────────────────────────
+    # In the served page these are external (CSP-clean); for the offline export
+    # there is no server, so fold them back inline. Only the literal "</script"
+    # sequence needs escaping to avoid prematurely closing the block.
+    for fname in ("theme-init.js", "share.js"):
+        fpath = os.path.join(FRONTEND_PATH, "js", fname)
+        tag = f'<script src="/js/{fname}"></script>'
+        if os.path.isfile(fpath):
+            with open(fpath, "r", encoding="utf-8") as fh:
+                content = fh.read().replace("</script", "<\\/script")
+            html = html.replace(tag, f"<script>\n{content}\n</script>", 1)
+        else:
+            html = html.replace(tag, "", 1)
+
     # ── 5. Remove absolute-path references that break offline use ─────────────
     # Favicon — just drop it; no functional impact
     html = html.replace('<link rel="icon" type="image/png" href="/cardboard-icon.png" />', '', 1)

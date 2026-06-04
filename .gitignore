@@ -2,6 +2,10 @@
 node_modules/
 npm-debug.log*
 
+# Throwaway smoke/driver scratch scripts (root-level only)
+/_*.mjs
+/_*.cjs
+
 # Python
 __pycache__/
 *.py[cod]

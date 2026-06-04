@@ -59,9 +59,11 @@ async function main() {
   for (const f of CLASSIC_JS) {
     fs.copyFileSync(path.join(SRC, 'js', f), path.join(DIST, 'js', f));
   }
-  // theme-init.js loads (unhashed) from <head> before paint, so it is served
-  // as-is rather than folded into a hashed bundle.
+  // theme-init.js loads (unhashed) from <head> before paint, and share.js is
+  // loaded by share.html — both served as-is rather than folded into a hashed
+  // bundle. (The static-export endpoint inlines them for offline use.)
   fs.copyFileSync(path.join(SRC, 'js', 'theme-init.js'), path.join(DIST, 'js', 'theme-init.js'));
+  fs.copyFileSync(path.join(SRC, 'js', 'share.js'), path.join(DIST, 'js', 'share.js'));
 
   // Patch index.html: swap CSS link and collapse all script tags into the bundle
   let html = fs.readFileSync(path.join(SRC, 'index.html'), 'utf8');
