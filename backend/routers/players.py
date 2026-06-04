@@ -139,9 +139,11 @@ def get_player_avatar(player_id: int, db: Session = Depends(get_db)):
     if not player.avatar_ext:
         raise HTTPException(status_code=404, detail="No custom avatar uploaded")
     path = _avatar_path(player)
-    if not os.path.isfile(path):
+    safe_dir = os.path.realpath(_avatars_dir())
+    real_path = os.path.realpath(path)
+    if not real_path.startswith(safe_dir + os.sep) or not os.path.isfile(real_path):
         raise HTTPException(status_code=404, detail="Avatar file not found")
-    return FileResponse(path)
+    return FileResponse(real_path)
 
 
 @router.post("/{player_id}/avatar", response_model=schemas.PlayerResponse)

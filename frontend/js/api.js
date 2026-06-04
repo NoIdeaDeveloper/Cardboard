@@ -219,6 +219,7 @@ const API = {
   markRequestSeen:   (id)            => request('PATCH',  `/share/requests/${id}/seen`),
 
   // Goals
+  checkGoals:  ()          => request('POST',   '/goals/check'),
   getGoals:    ()          => request('GET',    '/goals/'),
   createGoal:  (data)      => request('POST',   '/goals/', data),
   deleteGoal:  (id)        => request('DELETE', `/goals/${id}`),

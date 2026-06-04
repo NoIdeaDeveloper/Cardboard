@@ -148,11 +148,30 @@ def list_goals(db: Session = Depends(get_db)):
     results = []
     for goal in goals:
         current = _compute_current_value(goal, db)
+        results.append(_build_response(goal, current, game_names.get(goal.game_id)))
+    return results
+
+
+@router.post("/check", response_model=List[schemas.GoalResponse])
+def check_goals(db: Session = Depends(get_db)):
+    goals = db.query(models.Goal).order_by(models.Goal.created_at).all()
+    game_ids = {g.game_id for g in goals if g.game_id}
+    game_names = {}
+    if game_ids:
+        rows = db.query(models.Game.id, models.Game.name).filter(models.Game.id.in_(game_ids)).all()
+        game_names = {r.id: r.name for r in rows}
+
+    results = []
+    changed = False
+    for goal in goals:
+        current = _compute_current_value(goal, db)
         if not goal.is_complete and current >= goal.target_value:
             goal.is_complete = True
             goal.completed_at = datetime.now(timezone.utc)
+            changed = True
         results.append(_build_response(goal, current, game_names.get(goal.game_id)))
-    db.commit()
+    if changed:
+        db.commit()
     return results
 
 

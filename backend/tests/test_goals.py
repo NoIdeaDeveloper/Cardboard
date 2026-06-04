@@ -154,8 +154,8 @@ def test_goal_auto_completes_on_create_when_already_reached(client):
     assert data["current_value"] >= 5
 
 
-def test_goal_auto_completes_on_list(client):
-    """Goal not complete at create time, but auto-completes on list when threshold met."""
+def test_goal_auto_completes_on_check(client):
+    """Goal not complete at create time, but auto-completes on POST /check when threshold met."""
     game = _create_game(client, "Late auto")
 
     r = client.post(
@@ -165,15 +165,35 @@ def test_goal_auto_completes_on_list(client):
     assert r.status_code == 201
     assert r.json()["is_complete"] is False
 
-    # Now add 3 sessions — goal should still be incomplete until list is called
+    # Now add 3 sessions — goal should still be incomplete until check is called
     for i in range(3):
         _add_session(client, game["id"], played_at=f"2025-02-{10 + i:02d}")
 
-    r = client.get("/api/goals/")
+    r = client.post("/api/goals/check")
     goals = r.json()
     late = next(g for g in goals if g["title"] == "Late complete")
     assert late["is_complete"] is True
     assert late["completed_at"] is not None
+
+
+def test_list_goals_does_not_mutate(client):
+    """GET /api/goals/ must not modify goal state (no side effects)."""
+    game = _create_game(client, "No mutate")
+
+    client.post(
+        "/api/goals/",
+        json={"title": "No mutate", "type": "sessions_total", "target_value": 3},
+    )
+
+    for i in range(3):
+        _add_session(client, game["id"], played_at=f"2025-03-{10 + i:02d}")
+
+    # GET should not mark the goal complete
+    r = client.get("/api/goals/")
+    goals = r.json()
+    g = next(goal for goal in goals if goal["title"] == "No mutate")
+    assert g["is_complete"] is False
+    assert g["completed_at"] is None
 
 
 def test_goal_play_all_owned_progress(client):

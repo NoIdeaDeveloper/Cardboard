@@ -236,11 +236,13 @@ if ('serviceWorker' in navigator) {
       const thumb = isSafeUrl(g.image_url)
         ? `<img src="${escapeHtml(g.image_url)}" alt="" class="recommend-thumb" loading="lazy">`
         : `<div class="recommend-thumb-placeholder"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="22" height="22"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></div>`;
+      const players = formatPlayers(g.min_players, g.max_players);
+      const playtime = formatPlaytime(g.min_playtime, g.max_playtime);
       container.innerHTML = `
         ${thumb}
         <div class="recommend-body">
           <p class="recommend-title">${escapeHtml(g.name)}</p>
-          <p class="recommend-meta">${g.player_count ? escapeHtml(g.player_count) + ' players' : ''}${g.player_count && g.playtime ? ' \u2022 ' : ''}${g.playtime ? g.playtime + ' min' : ''}</p>
+          <p class="recommend-meta">${players ? escapeHtml(players) : ''}${players && playtime ? ' \u2022 ' : ''}${playtime ? escapeHtml(playtime) : ''}</p>
           <p class="recommend-reason">${escapeHtml(rec.reason_detail)}</p>
         </div>
         <div class="recommend-actions">
@@ -4804,7 +4806,7 @@ if ('serviceWorker' in navigator) {
     try {
       const [stats, goals] = await Promise.all([
         API.getStats(),
-        API.getGoals().catch(() => []),
+        API.checkGoals().then(() => API.getGoals()).catch(() => []),
       ]);
       const prefs = loadStatsPrefs();
       _statsPrefetched = { stats, goals, prefs };
@@ -4838,7 +4840,7 @@ if ('serviceWorker' in navigator) {
     try {
       const [stats, goals] = await Promise.all([
         API.getStats(),
-        API.getGoals().catch(() => []),
+        API.checkGoals().then(() => API.getGoals()).catch(() => []),
       ]);
       const prefs = loadStatsPrefs();
       el.innerHTML = '';
@@ -4874,7 +4876,7 @@ if ('serviceWorker' in navigator) {
     try {
       const [stats, goals] = await Promise.all([
         API.getStats(),
-        API.getGoals().catch(() => []),
+        API.checkGoals().then(() => API.getGoals()).catch(() => []),
       ]);
       const prefs = loadStatsPrefs();
       const el = document.getElementById('stats-content');
