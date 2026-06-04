@@ -670,10 +670,10 @@ def get_stats(db: Session = Depends(get_db)):
     if total_sessions > 0 and never_played_count > 0:
         # Use sessions from the last 6 months for a more accurate projection
         six_months_ago = today - timedelta(days=182)
-        recent_sessions = db.query(func.count(models.PlaySession.id)).filter(
+        recent_session_count = db.query(func.count(models.PlaySession.id)).filter(
             models.PlaySession.played_at >= six_months_ago
         ).scalar() or 0
-        avg_plays_per_week = recent_sessions / 26.0 if recent_sessions > 0 else total_sessions / 52.0
+        avg_plays_per_week = recent_session_count / 26.0 if recent_session_count > 0 else total_sessions / 52.0
         weeks_to_clear = never_played_count / avg_plays_per_week
         projected_clear_date = today + timedelta(weeks=weeks_to_clear)
         play_projection = schemas.PlayProjection(

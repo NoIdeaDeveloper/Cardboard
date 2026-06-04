@@ -1843,7 +1843,7 @@ if ('serviceWorker' in navigator) {
       <div class="quick-log-popup">
         <div class="quick-log-header">
           <span class="quick-log-label">Log Play</span>
-          <span class="quick-log-game">${escapeHtml(game.name)}</span>
+          <span class="quick-log-game"></span>
         </div>
         <div class="quick-log-form">
           <div class="quick-log-field">
@@ -1907,6 +1907,7 @@ if ('serviceWorker' in navigator) {
       </div>`;
 
     document.body.appendChild(overlay);
+    overlay.querySelector('.quick-log-game').textContent = game.name;
     requestAnimationFrame(() => overlay.classList.add('open'));
     pushModalOpen();
     overlay.querySelector('#ql-date').focus();
