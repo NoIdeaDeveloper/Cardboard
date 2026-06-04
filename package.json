@@ -7,7 +7,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "esbuild": "^0.25.0"
+    "esbuild": "^0.28.0"
   },
   "devDependencies": {
     "jsdom": "^26.1.0",
