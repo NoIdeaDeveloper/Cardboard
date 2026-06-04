@@ -42,6 +42,7 @@ async def import_bgg(file: UploadFile = File(...), db: Session = Depends(get_db)
     results = {"imported": 0, "skipped": 0, "errors": []}
 
     for item in items:
+        name = ""
         try:
             # Name: BGG exports have <name sortindex="1">Title</name>
             name_el = item.find("name[@sortindex='1']")
@@ -152,8 +153,7 @@ async def import_bgg(file: UploadFile = File(...), db: Session = Depends(get_db)
             results["imported"] += 1
 
         except (AttributeError, ValueError, TypeError, KeyError, OSError) as exc:
-            row_name = locals().get("name") or "unknown"
-            results["errors"].append(f"Skipped '{row_name}': {type(exc).__name__}")
+            results["errors"].append(f"Skipped '{name or 'unknown'}': {type(exc).__name__}")
             logger.debug("BGG import row error for '%s': %s", row_name, exc)
 
     try:
@@ -161,6 +161,7 @@ async def import_bgg(file: UploadFile = File(...), db: Session = Depends(get_db)
     except Exception as exc:
         db.rollback()
         logger.error("BGG import commit failed: %s", exc)
+        results["imported"] = 0
         results["errors"].append("Database commit failed — no games were saved")
     logger.info("BGG import: imported=%d skipped=%d errors=%d", results["imported"], results["skipped"], len(results["errors"]))
     return results
@@ -188,6 +189,7 @@ async def import_bgg_plays(file: UploadFile = File(...), db: Session = Depends(g
     affected_game_ids = set()
 
     for play in plays:
+        game_name = ""
         try:
             item_el = play.find("item")
             if item_el is None:
@@ -259,9 +261,8 @@ async def import_bgg_plays(file: UploadFile = File(...), db: Session = Depends(g
                 results["imported"] += 1
 
         except Exception as exc:
-            row_name = locals().get("game_name") or "unknown"
-            results["errors"].append(f"Skipped '{row_name}': {type(exc).__name__}")
-            logger.debug("BGG plays import row error for '%s': %s", row_name, exc)
+            results["errors"].append(f"Skipped '{game_name or 'unknown'}': {type(exc).__name__}")
+            logger.debug("BGG plays import row error for '%s': %s", game_name, exc)
 
     db.flush()
     for gid in affected_game_ids:

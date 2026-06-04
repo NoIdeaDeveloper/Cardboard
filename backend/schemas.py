@@ -186,7 +186,7 @@ class PlaySessionCreate(BaseModel):
 
 
 class BulkSessionCreate(BaseModel):
-    game_ids: List[int]
+    game_ids: List[int] = Field(..., min_length=1, max_length=50)
     played_at: date
     player_count: Optional[int] = Field(None, ge=1)
     duration_minutes: Optional[int] = Field(None, ge=1)

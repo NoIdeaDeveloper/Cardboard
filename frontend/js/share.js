@@ -156,7 +156,7 @@
         <div class="modal-body">
           <div class="modal-title-row">
             <h2 class="modal-title" id="modal-title">${escapeHtml(game.name)}</h2>
-            ${game.year_published ? `<span class="modal-year">${game.year_published}</span>` : ''}
+            ${game.year_published ? `<span class="modal-year">${escapeHtml(game.year_published)}</span>` : ''}
           </div>
           <div class="modal-chips">
             ${game.min_players || game.max_players ? `<span class="chip">${escapeHtml(formatPlayers(game.min_players, game.max_players))}</span>` : ''}

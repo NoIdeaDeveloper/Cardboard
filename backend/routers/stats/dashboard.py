@@ -23,7 +23,10 @@ from routers.stats._common import _status_counts, _trade_sell_candidates
 
 def _iso_month_to_label(iso_month: str) -> str:
     """Convert a 'YYYY-MM' string to a display label like 'Jan 2025'."""
-    return date(int(iso_month[:4]), int(iso_month[5:7]), 1).strftime("%b %Y")
+    try:
+        return date(int(iso_month[:4]), int(iso_month[5:7]), 1).strftime("%b %Y")
+    except (ValueError, IndexError):
+        return iso_month
 
 @router.get("/stats", response_model=schemas.StatsResponse)
 def get_stats(db: Session = Depends(get_db)):
@@ -665,7 +668,12 @@ def get_stats(db: Session = Depends(get_db)):
     # ── Play Projection ────────────────────────────────────────────────────
     play_projection = None
     if total_sessions > 0 and never_played_count > 0:
-        avg_plays_per_week = total_sessions / 52.0
+        # Use sessions from the last 6 months for a more accurate projection
+        six_months_ago = today - timedelta(days=182)
+        recent_sessions = db.query(func.count(models.PlaySession.id)).filter(
+            models.PlaySession.played_at >= six_months_ago
+        ).scalar() or 0
+        avg_plays_per_week = recent_sessions / 26.0 if recent_sessions > 0 else total_sessions / 52.0
         weeks_to_clear = never_played_count / avg_plays_per_week
         projected_clear_date = today + timedelta(weeks=weeks_to_clear)
         play_projection = schemas.PlayProjection(
@@ -680,11 +688,11 @@ def get_stats(db: Session = Depends(get_db)):
     current_year = str(today.year)
     acquired_this_year, sold_this_year = db.query(
         func.count(case((
-            models.Game.status.in_(["owned", "sold"]) & (func.strftime("%Y", models.Game.date_added) == current_year),
+            models.Game.status.in_(["owned", "sold"]) & (func.strftime("%Y", models.Game.purchase_date) == current_year),
             1,
         ))),
         func.count(case((
-            (models.Game.status == "sold") & (func.strftime("%Y", models.Game.date_added) == current_year),
+            (models.Game.status == "sold") & (func.strftime("%Y", models.Game.purchase_date) == current_year),
             1,
         ))),
     ).one()

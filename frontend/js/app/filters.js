@@ -15,7 +15,7 @@ export function buildFilterParams(offset) {
   return {
     sort_by: state.sortBy || undefined,
     sort_dir: state.sortDir || undefined,
-    include_expansions: state.showExpansions ? true : undefined,
+    include_expansions: state.showExpansions ? true : false,
     status: state.statusFilter !== 'all' ? state.statusFilter : undefined,
     search: state.search || undefined,
     never_played: state.filterNeverPlayed || undefined,

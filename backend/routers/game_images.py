@@ -142,7 +142,7 @@ def get_gallery_image_file(game_id: int, img_id: int, db: Session = Depends(get_
     path = _image_file_path(game_id, img.filename)
     real = os.path.realpath(path)
     gallery_dir = os.path.realpath(_game_gallery_dir(game_id))
-    if not real.startswith(gallery_dir + os.sep):
+    if os.path.commonpath([gallery_dir, real]) != gallery_dir:
         raise HTTPException(status_code=404, detail="Image file not found")
     if not os.path.isfile(real):
         raise HTTPException(status_code=404, detail="Image file not found")
@@ -236,9 +236,9 @@ def add_gallery_image_from_url(
                 chunks.append(chunk)
             content = b"".join(chunks)
             
-            # Basic validation that this is actually an image
-            if len(content) < 100:  # Minimum reasonable image size
-                raise HTTPException(status_code=400, detail="Downloaded content is too small to be a valid image")
+            # Validate image magic bytes
+            if not validate_image_content(content):
+                raise HTTPException(status_code=400, detail="Downloaded content is not a valid image")
             
     except HTTPException:
         raise

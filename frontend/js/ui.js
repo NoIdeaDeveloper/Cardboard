@@ -35,7 +35,7 @@ function buildGameCard(game) {
   let metaHtml = '';
   if (players)  metaHtml += `<span class="chip">${escapeHtml(players)}</span>`;
   if (playtime) metaHtml += `<span class="chip">${escapeHtml(playtime)}</span>`;
-  if (game.year_published) metaHtml += `<span class="chip">${game.year_published}</span>`;
+  if (game.year_published) metaHtml += `<span class="chip">${escapeHtml(game.year_published)}</span>`;
 
   // --- Heat level based on recency (pre-computed by server) ---
   const _now = Date.now();
@@ -341,7 +341,7 @@ function buildModalContent(game, sessions, onSave, onDelete, onAddSession, onDel
   if (players)  chipsHtml += `<span class="chip">${escapeHtml(players)}</span>`;
   if (playtime) chipsHtml += `<span class="chip">${escapeHtml(playtime)}</span>`;
   if (game.difficulty) chipsHtml += `<span class="chip chip-difficulty">${+game.difficulty.toFixed(2)} weight</span>`;
-  if (game.year_published) chipsHtml += `<span class="chip">${game.year_published}</span>`;
+  if (game.year_published) chipsHtml += `<span class="chip">${escapeHtml(game.year_published)}</span>`;
 
   function tagsBlock(label, items) {
     if (!items.length) return '';
@@ -692,7 +692,7 @@ function buildModalContent(game, sessions, onSave, onDelete, onAddSession, onDel
     <div class="modal-body">
       <div class="modal-title-row">
         <h2 class="modal-title" id="modal-title">${escapeHtml(game.name)}</h2>
-        ${game.year_published ? `<span class="modal-year">${game.year_published}</span>` : ''}
+        ${game.year_published ? `<span class="modal-year">${escapeHtml(game.year_published)}</span>` : ''}
         ${modalStatusBadge}
       </div>
 
@@ -1958,7 +1958,7 @@ function openSingleImageLightbox(url, alt = '') {
 function buildAddedByMonthFromEntries(entries) {
   if (!entries || !entries.length) return '';
   const max = Math.max(...entries.map(e => e.count), 1);
-  return entries.map(e => `<div class="stat-bar-row" data-month="${escapeHtml(e.month)}" data-type="added" data-count="${e.count}">
+  return entries.map(e => `<div class="stat-bar-row" data-month="${escapeHtml(e.month)}" data-type="added" data-count="${escapeHtml(String(e.count))}">
           <span class="stat-bar-label">${escapeHtml(e.month)}</span>
           <div class="stat-bar-track"><div class="stat-bar-fill" style="width:0%" data-target-width="${e.count ? Math.round(e.count / max * 100) : 0}%"></div></div>
           <span class="stat-bar-count">${e.count}</span>
@@ -2727,7 +2727,7 @@ function buildStatsView(stats, games, prefs = {}, onPrefsChange = null, goals = 
     <div class="stats-section" data-section="sessions_by_month"${!currentPrefs.show_sessions_by_month ? ' style="display:none"' : ''}>
       ${_sectionInfoHeader('Sessions by Month', 'About Sessions by Month', '<p class="health-info-intro">Play sessions logged per calendar month. Click any bar to see which games were played that month.</p>')}
       <div class="stat-bar-chart">
-        ${stats.sessions_by_month.map(entry => `<div class="stat-bar-row" data-month="${escapeHtml(entry.month)}" data-type="sessions" data-count="${entry.count}" data-game-ids='${JSON.stringify(entry.game_ids || [])}' data-tooltip="${pluralize(entry.count, 'session')}">
+        ${stats.sessions_by_month.map(entry => `<div class="stat-bar-row" data-month="${escapeHtml(entry.month)}" data-type="sessions" data-count="${escapeHtml(String(entry.count))}" data-game-ids="${escapeHtml(JSON.stringify(entry.game_ids || []))}" data-tooltip="${pluralize(entry.count, 'session')}">
           <span class="stat-bar-label">${escapeHtml(entry.month)}</span>
           <div class="stat-bar-track"><div class="stat-bar-fill stat-bar-fill-sessions" style="width:0%" data-target-width="${entry.count ? Math.round(entry.count / sessionsMax * 100) : 0}%"></div></div>
           <span class="stat-bar-count">${entry.count}</span>

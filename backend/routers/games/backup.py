@@ -654,8 +654,16 @@ def _extract_and_validate_db(zf: zipfile.ZipFile, tmp_zip_name: str, db_suffix: 
     if "cardboard.db" not in zf.namelist():
         raise HTTPException(status_code=422, detail="Invalid backup: cardboard.db not found in ZIP")
     db_tmp = tmp_zip_name + db_suffix
+    MAX_DB_SIZE = 500 * 1024 * 1024  # 500 MB
+    db_size = 0
     with zf.open("cardboard.db") as src, open(db_tmp, "wb") as dst:
-        dst.write(src.read())
+        while chunk := src.read(65536):
+            db_size += len(chunk)
+            if db_size > MAX_DB_SIZE:
+                dst.close()
+                os.unlink(db_tmp)
+                raise HTTPException(status_code=413, detail="Backup database exceeds 500 MB limit")
+            dst.write(chunk)
     conn = sqlite3.connect(db_tmp)
     try:
         integrity = conn.execute("PRAGMA integrity_check").fetchone()
@@ -706,15 +714,23 @@ async def restore_backup(file: UploadFile = File(...)):
 
             # Restore media directories (optional — skip missing)
             safe_data_dir = os.path.realpath(data_dir) + os.sep
+            MAX_DECOMPRESSED_PER_FILE = 200 * 1024 * 1024  # 200 MB per file
             for arc_path in zf.namelist():
                 if not any(arc_path.startswith(d + "/") for d in _MEDIA_DIRS):
                     continue
                 dest = os.path.realpath(os.path.join(data_dir, arc_path))
-                if not dest.startswith(safe_data_dir):
+                if os.path.commonpath([safe_data_dir, dest]) != os.path.realpath(data_dir):
                     continue
                 os.makedirs(os.path.dirname(dest), exist_ok=True)
+                file_size = 0
                 with zf.open(arc_path) as src, open(dest, "wb") as dst:
-                    dst.write(src.read())
+                    while chunk := src.read(65536):
+                        file_size += len(chunk)
+                        if file_size > MAX_DECOMPRESSED_PER_FILE:
+                            dst.close()
+                            os.unlink(dest)
+                            raise HTTPException(status_code=413, detail=f"Backup file {arc_path} exceeds 200 MB limit")
+                        dst.write(chunk)
 
         logger.info("Restore completed from uploaded backup")
         return {"detail": "Restore successful. Reload the page to see your restored data."}

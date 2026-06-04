@@ -48,7 +48,7 @@ describe('buildFilterParams', () => {
   });
 
   it('passes include_expansions only when showExpansions is on', () => {
-    expect(buildFilterParams(0).include_expansions).toBeUndefined();
+    expect(buildFilterParams(0).include_expansions).toBe(false);
     state.showExpansions = true;
     expect(buildFilterParams(0).include_expansions).toBe(true);
   });

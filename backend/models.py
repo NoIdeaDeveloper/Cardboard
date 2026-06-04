@@ -34,7 +34,7 @@ class Game(Base):
     # Python-side defaults so they work reliably with SQLite
     date_added = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
     date_modified = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False)
-    parent_game_id = Column(Integer, ForeignKey("games.id"), nullable=True, index=True)
+    parent_game_id = Column(Integer, ForeignKey("games.id", ondelete="SET NULL"), nullable=True, index=True)
     # New fields
     bgg_id = Column(Integer, nullable=True, index=True)
     bgg_rating = Column(Float, nullable=True)  # BGG community average rating

@@ -958,7 +958,7 @@ if ('serviceWorker' in navigator) {
     results.forEach((r, i) => (r.status === 'fulfilled' ? succeeded : failed).push({ ...r, id: ids[i] }));
     succeeded.forEach(r => {
       updateGameInState(r.value.id, r.value);
-      state.selectedGameIds.delete(r.id);
+      state.selectedGameIds.delete(r.value.id);
     });
     const msg = failed.length
       ? `${succeeded.length} updated · ${failed.length} failed — ${classifyError(failed[0].reason) || 'unknown error'}`
@@ -1112,7 +1112,7 @@ if ('serviceWorker' in navigator) {
         let restored = 0;
         for (const snap of restoredSnapshots) {
           try {
-            const { id: _id, date_modified: _dm, image_cached: _ic, parent_game_name: _pgn, ...payload } = snap;
+            const { id: _id, date_modified: _dm, image_cached: _ic, parent_game_name: _pgn, expansion_count: _ec, session_count: _sc, heat_level: _hl, thumbnail_url: _tu, ...payload } = snap;
             const created = await API.createGame(payload);
             state.games.push(created);
             restored++;
@@ -1363,7 +1363,8 @@ if ('serviceWorker' in navigator) {
     const statsEl     = document.getElementById('collection-stats');
 
     // state.games is already server-filtered; just render it directly
-    const filtered = state.games;
+    state.filteredGames = state.games;
+    const filtered = state.filteredGames;
 
     if (state.games.length > 0) {
       const cs = state.collectionStats;
@@ -1557,12 +1558,13 @@ if ('serviceWorker' in navigator) {
 
       _virtualPageObserver = new IntersectionObserver((entries) => {
         if (!entries[0].isIntersecting) return;
-        const next = filtered.slice(state.virtualOffset, state.virtualOffset + VIRTUAL_PAGE_SIZE);
+        const src = state.filteredGames;
+        const next = src.slice(state.virtualOffset, state.virtualOffset + VIRTUAL_PAGE_SIZE);
         if (!next.length) { _virtualPageObserver?.disconnect(); _virtualPageObserver = null; sentinel.remove(); return; }
         next.forEach(game => container.appendChild(_buildCard(game)));
         state.virtualOffset += VIRTUAL_PAGE_SIZE;
         _observeNewCards();
-        if (state.virtualOffset >= filtered.length) { _virtualPageObserver?.disconnect(); _virtualPageObserver = null; sentinel.remove(); }
+        if (state.virtualOffset >= src.length) { _virtualPageObserver?.disconnect(); _virtualPageObserver = null; sentinel.remove(); }
 
         // Recycle cards that have scrolled far above the viewport. Measure
         // the height of the block to be removed *before* removing it, then
@@ -1742,9 +1744,12 @@ if ('serviceWorker' in navigator) {
 
     document.body.appendChild(popover);
 
+    const ac = new AbortController();
+    let closed = false;
     function close() {
-      document.removeEventListener('keydown', onKeyDown);
-      document.removeEventListener('mousedown', onOutsideClick);
+      if (closed) return;
+      closed = true;
+      ac.abort();
       popover.classList.remove('open');
       setTimeout(() => popover.remove(), 180);
     }
@@ -1778,8 +1783,8 @@ if ('serviceWorker' in navigator) {
     }
     requestAnimationFrame(() => popover.classList.add('open'));
 
-    document.addEventListener('keydown', onKeyDown);
-    popover.querySelector('#qlc-close').addEventListener('click', close);
+    document.addEventListener('keydown', onKeyDown, { signal: ac.signal });
+    popover.querySelector('#qlc-close').addEventListener('click', close, { signal: ac.signal });
 
     // Star picker
     const ratingPicker = popover.querySelector('#qlc-rating');
@@ -1789,17 +1794,17 @@ if ('serviceWorker' in navigator) {
       const val = parseInt(btn.dataset.val, 10);
       ratingPicker.dataset.value = val;
       ratingPicker.querySelectorAll('.star-btn').forEach(b => b.classList.toggle('active', parseInt(b.dataset.val, 10) <= val));
-    });
+    }, { signal: ac.signal });
     ratingPicker.addEventListener('mouseover', e => {
       const btn = e.target.closest('.star-btn');
       if (!btn) return;
       const val = parseInt(btn.dataset.val, 10);
       ratingPicker.querySelectorAll('.star-btn').forEach(b => b.classList.toggle('active', parseInt(b.dataset.val, 10) <= val));
-    });
+    }, { signal: ac.signal });
     ratingPicker.addEventListener('mouseleave', () => {
       const saved = parseInt(ratingPicker.dataset.value, 10) || 0;
       ratingPicker.querySelectorAll('.star-btn').forEach(b => b.classList.toggle('active', parseInt(b.dataset.val, 10) <= saved));
-    });
+    }, { signal: ac.signal });
 
     // Submit
     popover.querySelector('#qlc-submit').addEventListener('click', async () => {
@@ -1822,12 +1827,11 @@ if ('serviceWorker' in navigator) {
     // More options — open full form
     popover.querySelector('#qlc-more').addEventListener('click', () => {
       close();
-      // Preserve date if set
       const compactDate = popover.querySelector('#qlc-date').value;
       openQuickLogSessionFull(game, compactDate);
-    });
+    }, { signal: ac.signal });
 
-    document.addEventListener('mousedown', onOutsideClick);
+    document.addEventListener('mousedown', onOutsideClick, { signal: ac.signal });
   }
 
   function openQuickLogSessionFull(game, presetDate) {

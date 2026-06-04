@@ -23,9 +23,9 @@ function pluralize(count, singular, plural) {
 
 function formatDate(isoDate) {
   if (!isoDate) return '';
-  const d = new Date(isoDate + 'T00:00:00');
+  const d = new Date(isoDate + 'T00:00:00Z');
   if (isNaN(d)) return isoDate;
-  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
 }
 
 function formatPlaytime(min, max) {

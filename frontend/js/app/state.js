@@ -34,6 +34,7 @@ const _cp = loadCollectionPrefs();
 
 export const state = {
   games: [],
+  filteredGames: [],  // current filtered view (updated by renderCollection)
   collectionStats: null,  // pre-aggregated collection stats from server
   virtualOffset: 0,       // how many cards have been appended so far
   serverOffset: 0,        // offset of the next server page to fetch

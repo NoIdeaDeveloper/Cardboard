@@ -41,7 +41,9 @@ def _safe_filename(name: str) -> str:
     """Strip path components and replace unsafe characters."""
     name = os.path.basename(name)
     name = re.sub(r"[^\w.\-]", "_", name)
-    return name[:200]  # cap length
+    # Strip leading dots to prevent hidden/special files
+    name = name.lstrip(".")
+    return name[:200] if name else "unnamed"
 
 def _instructions_path(game_id: int, filename: str) -> str:
     return os.path.join(INSTRUCTIONS_DIR, f"{game_id}_{os.path.basename(filename)}")
