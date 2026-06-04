@@ -4,6 +4,14 @@
 
 import { state, saveCollectionPrefs, NO_LOCATION_SENTINEL } from './app/state.js';
 import { sortGames } from './app/sort.js';
+import { SERVER_PAGE_SIZE, buildFilterParams, hasActiveFilters, _activeFilterCount } from './app/filters.js';
+
+// Service-worker registration — moved out of an inline <script> in index.html
+// so it complies with the CSP `script-src 'self'` directive (inline scripts,
+// having no nonce/hash, were being blocked and the SW never registered).
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/sw.js').catch(() => {});
+}
 
 (function () {
   'use strict';
@@ -328,9 +336,9 @@ import { sortGames } from './app/sort.js';
   }
 
   // ===== State =====
-  // `state` and collection-prefs persistence are imported from app/state.js.
+  // `state` and collection-prefs persistence are imported from app/state.js;
+  // SERVER_PAGE_SIZE and the filter helpers from app/filters.js.
   const VIRTUAL_PAGE_SIZE = 60;
-  const SERVER_PAGE_SIZE  = 200; // games fetched per server request
 
   // Blob URL for add-game image preview — revoked on view switch
   let _addGamePreviewBlobUrl = null;
@@ -848,25 +856,6 @@ import { sortGames } from './app/sort.js';
     localStorage.setItem('cardboard_weekly_toast_date', today);
   }
 
-  function buildFilterParams(offset) {
-    return {
-      sort_by: state.sortBy || undefined,
-      sort_dir: state.sortDir || undefined,
-      include_expansions: state.showExpansions ? true : undefined,
-      status: state.statusFilter !== 'all' ? state.statusFilter : undefined,
-      search: state.search || undefined,
-      never_played: state.filterNeverPlayed || undefined,
-      min_players: state.filterPlayers || undefined,
-      max_players: state.filterPlayers || undefined,
-      min_playtime: state.filterTime || undefined,
-      max_playtime: state.filterTime || undefined,
-      mechanics: state.filterMechanics.length ? state.filterMechanics.join(',') : undefined,
-      categories: state.filterCategories.length ? state.filterCategories.join(',') : undefined,
-      location: state.filterLocation || undefined,
-      limit: SERVER_PAGE_SIZE,
-      offset,
-    };
-  }
 
   // ===== Load Collection =====
   async function loadCollection({ showSkeleton = state.games.length === 0 } = {}) {
@@ -1242,23 +1231,6 @@ import { sortGames } from './app/sort.js';
       const card = e.target.closest('[data-game-id]');
       if (card && !card.contains(e.relatedTarget)) hoveredGame = null;
     });
-  }
-
-  function hasActiveFilters() {
-    return state.filterNeverPlayed || state.filterPlayers !== null ||
-      state.filterTime !== null || state.filterMechanics.length > 0 ||
-      state.filterCategories.length > 0 || state.filterLocation !== null;
-  }
-
-  function _activeFilterCount() {
-    let count = 0;
-    if (state.filterNeverPlayed) count++;
-    if (state.filterPlayers !== null) count++;
-    if (state.filterTime !== null) count++;
-    count += state.filterMechanics.length;
-    count += state.filterCategories.length;
-    if (state.filterLocation !== null) count++;
-    return count;
   }
 
   function _locationLabel(key) {

@@ -59,13 +59,16 @@ async function main() {
   for (const f of CLASSIC_JS) {
     fs.copyFileSync(path.join(SRC, 'js', f), path.join(DIST, 'js', f));
   }
+  // theme-init.js loads (unhashed) from <head> before paint, so it is served
+  // as-is rather than folded into a hashed bundle.
+  fs.copyFileSync(path.join(SRC, 'js', 'theme-init.js'), path.join(DIST, 'js', 'theme-init.js'));
 
   // Patch index.html: swap CSS link and collapse all script tags into the bundle
   let html = fs.readFileSync(path.join(SRC, 'index.html'), 'utf8');
   html = html
     .replace('href="css/style.css"', `href="css/${cssFile}"`)
     .replace(/[ \t]*<script src="js\/(shared-utils|theme|ui-helpers|api|ui|confetti)\.js"><\/script>\r?\n/g, '')
-    .replace('  <script src="js/app.js"></script>',
+    .replace('  <script type="module" src="js/app.js"></script>',
              `  <script src="js/${jsFile}"></script>\n  <script src="js/${appFile}"></script>`);
   fs.writeFileSync(path.join(DIST, 'index.html'), html);
 
@@ -75,7 +78,7 @@ async function main() {
     .replace("'cardboard-v2'", `'cardboard-${jsHash}${appHash}'`)
     .replace(
       /const SHELL_ASSETS = \[[\s\S]*?\];/,
-      `const SHELL_ASSETS = [\n  '/',\n  '/js/${jsFile}',\n  '/js/${appFile}',\n  '/css/${cssFile}',\n];`
+      `const SHELL_ASSETS = [\n  '/',\n  '/js/theme-init.js',\n  '/js/${jsFile}',\n  '/js/${appFile}',\n  '/css/${cssFile}',\n];`
     );
   fs.writeFileSync(path.join(DIST, 'sw.js'), sw);
 
