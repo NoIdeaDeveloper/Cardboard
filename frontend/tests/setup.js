@@ -15,3 +15,14 @@ Object.defineProperty(globalThis, 'localStorage', {
   configurable: true,
   value: new MemoryStorage(),
 });
+
+// ui-helpers.js exposes these as globals in the classic bundle; modules
+// extracted from app.js reference them ambiently, so provide equivalents
+// (matching ui-helpers' implementation) for code imported under test.
+globalThis.loadJsonFromStorage = (key, def) => {
+  try { const v = localStorage.getItem(key); return v !== null ? JSON.parse(v) : def; }
+  catch { return def; }
+};
+globalThis.saveJsonToStorage = (key, value) => {
+  try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* noop */ }
+};

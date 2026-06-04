@@ -2,45 +2,11 @@
  * Cardboard – main application logic
  */
 
+import { state, saveCollectionPrefs, NO_LOCATION_SENTINEL } from './app/state.js';
+import { sortGames } from './app/sort.js';
+
 (function () {
   'use strict';
-
-  // ===== Collection Prefs =====
-  const COLLECTION_PREFS_KEY = 'cardboard_collection_prefs';
-  const COLLECTION_PREFS_DEFAULTS = {
-    sortBy: 'name', sortDir: 'asc', viewMode: 'grid', statusFilter: 'owned',
-    search: '',
-    filterNeverPlayed: false,
-    filterPlayers: null,
-    filterTime: null,
-    filterMechanics: [],
-    filterCategories: [],
-    filterLocation: null,
-  };
-  // Mirrors NO_LOCATION_SENTINEL in backend/constants.py.
-  const NO_LOCATION_SENTINEL = '__none__';
-
-  function loadCollectionPrefs() {
-    const raw = { ...COLLECTION_PREFS_DEFAULTS, ...loadJsonFromStorage(COLLECTION_PREFS_KEY, {}) };
-    // Defensive coercion: localStorage can be edited by users / older versions.
-    if (!Array.isArray(raw.filterMechanics))  raw.filterMechanics  = [];
-    if (!Array.isArray(raw.filterCategories)) raw.filterCategories = [];
-    return raw;
-  }
-
-  function saveCollectionPrefs() {
-    saveJsonToStorage(COLLECTION_PREFS_KEY, {
-      sortBy: state.sortBy, sortDir: state.sortDir,
-      viewMode: state.viewMode, statusFilter: state.statusFilter,
-      search: state.search,
-      filterNeverPlayed: state.filterNeverPlayed,
-      filterPlayers: state.filterPlayers,
-      filterTime: state.filterTime,
-      filterMechanics: state.filterMechanics,
-      filterCategories: state.filterCategories,
-      filterLocation: state.filterLocation,
-    });
-  }
 
   // ===== URL Sync for Shareable Filtered Views =====
 
@@ -362,33 +328,9 @@
   }
 
   // ===== State =====
-  const _cp = loadCollectionPrefs();
+  // `state` and collection-prefs persistence are imported from app/state.js.
   const VIRTUAL_PAGE_SIZE = 60;
   const SERVER_PAGE_SIZE  = 200; // games fetched per server request
-
-  let state = {
-    games: [],
-    collectionStats: null,  // pre-aggregated collection stats from server
-    virtualOffset: 0,       // how many cards have been appended so far
-    serverOffset: 0,        // offset of the next server page to fetch
-    serverTotal: 0,         // total matching games on the server
-    players: [],        // known player names for autocomplete
-    playerObjects: [],  // full player objects (id, name, avatar_url, …)
-    viewMode: _cp.viewMode,
-    sortBy: _cp.sortBy,
-    sortDir: _cp.sortDir,
-    search: _cp.search,
-    statusFilter: _cp.statusFilter,
-    filterNeverPlayed: _cp.filterNeverPlayed,
-    filterPlayers: _cp.filterPlayers,
-    filterTime: _cp.filterTime,
-    filterMechanics: _cp.filterMechanics,
-    filterCategories: _cp.filterCategories,
-    filterLocation: _cp.filterLocation,
-    showExpansions: false,
-    bulkMode: false,
-    selectedGameIds: new Set(),
-  };
 
   // Blob URL for add-game image preview — revoked on view switch
   let _addGamePreviewBlobUrl = null;
@@ -887,28 +829,7 @@
     });
   }
 
-  // ===== Sort =====
-  function sortGames(games, sortBy, sortDir) {
-    const asc = sortDir !== 'desc';
-    return [...games].sort((a, b) => {
-      let av, bv;
-      if (!sortBy || sortBy === 'name') {
-        const strip = s => (s || '').replace(/^the\s+/i, '').toLowerCase();
-        av = strip(a.name);
-        bv = strip(b.name);
-      } else {
-        av = a[sortBy] ?? null;
-        bv = b[sortBy] ?? null;
-      }
-      // Nulls last in asc, first in desc — matches SQLite default behaviour
-      if (av === null && bv === null) return 0;
-      if (av === null) return asc ? 1 : -1;
-      if (bv === null) return asc ? -1 : 1;
-      if (av < bv) return asc ? -1 : 1;
-      if (av > bv) return asc ? 1 : -1;
-      return 0;
-    });
-  }
+  // ===== Sort ===== (sortGames is imported from app/sort.js)
 
   // ===== Weekly Summary Toast =====
   function _maybeShowWeeklySummary() {
