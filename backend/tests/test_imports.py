@@ -105,17 +105,19 @@ def test_csv_import_partial_failure_preserves_valid_rows(client):
         "Batch Bad B,FailsHere\n"
         "Batch Good C,Economic\n"
     )
-    import routers.games as _gmod
-    original = _gmod._save_tags
+    # CSV import lives in routers.games.imports; patch _save_tags where the
+    # endpoint resolves it (the submodule global), not on the package facade.
+    import routers.games.imports as _imp
+    original = _imp._save_tags
 
     def _failing_tags(game_id, data_dict, db):
-        g = db.query(_gmod.models.Game).filter(_gmod.models.Game.id == game_id).first()
+        g = db.query(_imp.models.Game).filter(_imp.models.Game.id == game_id).first()
         if g and g.name == "Batch Bad B":
             raise Exception("Simulated tag-save failure")
         return original(game_id, data_dict, db)
 
     from unittest.mock import patch
-    with patch.object(_gmod, "_save_tags", _failing_tags):
+    with patch.object(_imp, "_save_tags", _failing_tags):
         r = _csv_upload(client, csv_text)
 
     assert r.status_code == 200
