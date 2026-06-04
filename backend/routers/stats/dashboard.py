@@ -688,11 +688,11 @@ def get_stats(db: Session = Depends(get_db)):
     current_year = str(today.year)
     acquired_this_year, sold_this_year = db.query(
         func.count(case((
-            models.Game.status.in_(["owned", "sold"]) & (func.strftime("%Y", models.Game.purchase_date) == current_year),
+            models.Game.status.in_(["owned", "sold"]) & (func.strftime("%Y", func.coalesce(models.Game.purchase_date, models.Game.date_added)) == current_year),
             1,
         ))),
         func.count(case((
-            (models.Game.status == "sold") & (func.strftime("%Y", models.Game.purchase_date) == current_year),
+            (models.Game.status == "sold") & (func.strftime("%Y", func.coalesce(models.Game.purchase_date, models.Game.date_added)) == current_year),
             1,
         ))),
     ).one()

@@ -2678,7 +2678,7 @@ function buildStatsView(stats, games, prefs = {}, onPrefsChange = null, goals = 
     <div class="stats-section" data-section="ratings"${!currentPrefs.show_ratings ? ' style="display:none"' : ''}>
       ${_sectionInfoHeader('Rating Distribution', 'About Rating Distribution', '<p class="health-info-intro">A breakdown of your personal ratings grouped into buckets. Unrated games are not included. A healthy collection tends to have ratings clustered in the 6–9 range.</p>')}
       <div class="stat-bar-chart">
-        ${ratingEntries.map(([bucket, count]) => `<div class="stat-bar-row" data-bucket="${escapeHtml(bucket)}" data-count="${count}">
+        ${ratingEntries.map(([bucket, count]) => `<div class="stat-bar-row" data-bucket="${escapeHtml(bucket)}" data-count="${escapeHtml(String(count))}">
           <span class="stat-bar-label">${escapeHtml(bucket)}</span>
           <div class="stat-bar-track"><div class="stat-bar-fill" style="width:0%" data-target-width="${count ? Math.round(count / maxRating * 100) : 0}%"></div></div>
           <span class="stat-bar-count">${count}</span>
@@ -2727,7 +2727,7 @@ function buildStatsView(stats, games, prefs = {}, onPrefsChange = null, goals = 
     <div class="stats-section" data-section="sessions_by_month"${!currentPrefs.show_sessions_by_month ? ' style="display:none"' : ''}>
       ${_sectionInfoHeader('Sessions by Month', 'About Sessions by Month', '<p class="health-info-intro">Play sessions logged per calendar month. Click any bar to see which games were played that month.</p>')}
       <div class="stat-bar-chart">
-        ${stats.sessions_by_month.map(entry => `<div class="stat-bar-row" data-month="${escapeHtml(entry.month)}" data-type="sessions" data-count="${escapeHtml(String(entry.count))}" data-game-ids="${escapeHtml(JSON.stringify(entry.game_ids || []))}" data-tooltip="${pluralize(entry.count, 'session')}">
+        ${stats.sessions_by_month.map(entry => `<div class="stat-bar-row" data-month="${escapeHtml(entry.month)}" data-type="sessions" data-count="${escapeHtml(String(entry.count))}" data-game-ids="${escapeHtml(JSON.stringify(entry.game_ids || []))}" data-tooltip="${escapeHtml(pluralize(entry.count, 'session'))}">
           <span class="stat-bar-label">${escapeHtml(entry.month)}</span>
           <div class="stat-bar-track"><div class="stat-bar-fill stat-bar-fill-sessions" style="width:0%" data-target-width="${entry.count ? Math.round(entry.count / sessionsMax * 100) : 0}%"></div></div>
           <span class="stat-bar-count">${entry.count}</span>
@@ -2911,7 +2911,7 @@ function buildStatsView(stats, games, prefs = {}, onPrefsChange = null, goals = 
           const count = dowSessionsByDay[i];
           const pct = Math.round((count / maxDow) * 100);
           const gameIds = JSON.stringify(dowGameIdsByDay[i]);
-          return `<div class="stats-dow-col${count > 0 ? ' stats-dow-col-clickable' : ''}" data-dow="${i}" data-dow-label="${label}" data-game-ids="${escapeHtml(gameIds)}" data-count="${count}">
+          return `<div class="stats-dow-col${count > 0 ? ' stats-dow-col-clickable' : ''}" data-dow="${i}" data-dow-label="${escapeHtml(label)}" data-game-ids="${escapeHtml(gameIds)}" data-count="${escapeHtml(String(count))}">
             <div class="stats-dow-bar-wrap">
               <div class="stat-bar-fill stats-dow-bar" style="height:0%" data-target-height="${pct}%"${i === peakDowIdx && count > 0 ? ' data-peak="true"' : ''}></div>
             </div>
@@ -2958,7 +2958,7 @@ function buildStatsView(stats, games, prefs = {}, onPrefsChange = null, goals = 
       const tooltip = count > 0 ? `${iso}: ${pluralize(count, 'session')}` : iso;
       const dayEntry = (stats.sessions_by_day || []).find(d => d.date === iso);
       const gameIds = dayEntry && dayEntry.game_ids ? JSON.stringify(dayEntry.game_ids) : '[]';
-      cells.push(`<div class="hm-cell${count > 0 ? ' hm-cell-clickable' : ''}" data-level="${level}" data-date="${iso}" data-count="${count}" data-game-ids="${escapeHtml(gameIds)}" data-tooltip="${tooltip}"></div>`);
+      cells.push(`<div class="hm-cell${count > 0 ? ' hm-cell-clickable' : ''}" data-level="${level}" data-date="${escapeHtml(iso)}" data-count="${escapeHtml(String(count))}" data-game-ids="${escapeHtml(gameIds)}" data-tooltip="${escapeHtml(tooltip)}"></div>`);
       if (dow === 6) colIndex++;
       cur.setDate(cur.getDate() + 1);
     }

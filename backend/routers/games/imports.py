@@ -154,7 +154,7 @@ async def import_bgg(file: UploadFile = File(...), db: Session = Depends(get_db)
 
         except (AttributeError, ValueError, TypeError, KeyError, OSError) as exc:
             results["errors"].append(f"Skipped '{name or 'unknown'}': {type(exc).__name__}")
-            logger.debug("BGG import row error for '%s': %s", row_name, exc)
+            logger.debug("BGG import row error for '%s': %s", name, exc)
 
     try:
         db.commit()
