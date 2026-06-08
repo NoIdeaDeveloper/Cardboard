@@ -6,6 +6,9 @@ import { state, saveCollectionPrefs, NO_LOCATION_SENTINEL } from './app/state.js
 import { sortGames } from './app/sort.js';
 import { SERVER_PAGE_SIZE, buildFilterParams, hasActiveFilters, _activeFilterCount } from './app/filters.js';
 import { classifyError } from './app/errors.js';
+import { wireGoalsSection } from './app/goals.js';
+import { bindExportModal } from './app/export.js';
+import { maybeStartTour, resetTour } from './app/tour.js';
 
 // Service-worker registration — moved out of an inline <script> in index.html
 // so it complies with the CSP `script-src 'self'` directive (inline scripts,
@@ -2527,47 +2530,6 @@ if ('serviceWorker' in navigator) {
     btn.addEventListener('click', openPlayersModal);
   }
 
-  function bindExportModal() {
-    const btn = document.getElementById('export-btn');
-    if (!btn) return;
-    btn.addEventListener('click', openExportModal);
-  }
-
-  function openExportModal() {
-    const inner = document.createElement('div');
-    inner.innerHTML = `
-      <div class="modal-content-panel">
-        <div class="modal-panel-header">
-          <h2>Export Data</h2>
-          <button class="modal-close" id="export-modal-close" aria-label="Close">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="18" height="18"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-          </button>
-        </div>
-        <div class="modal-body">
-          <p style="color:var(--text-2);font-size:0.85rem;margin-bottom:12px">Download your collection, sessions, and players in standard formats.</p>
-          <div class="form-group" style="margin-bottom:10px">
-            <button class="btn btn-secondary" id="export-json-btn" style="width:100%">Export as JSON</button>
-          </div>
-          <div class="form-group" style="margin-bottom:10px">
-            <button class="btn btn-secondary" id="export-csv-btn" style="width:100%">Export as CSV</button>
-          </div>
-          <div class="form-group">
-            <button class="btn btn-secondary" id="export-images-btn" style="width:100%">Export Images (ZIP)</button>
-          </div>
-        </div>
-      </div>`;
-    openModal(inner);
-    inner.querySelector('#export-modal-close').addEventListener('click', closeModal);
-    inner.querySelector('#export-json-btn').addEventListener('click', () => {
-      window.open('/api/games/export/json', '_blank');
-    });
-    inner.querySelector('#export-csv-btn').addEventListener('click', () => {
-      window.open('/api/games/export/csv', '_blank');
-    });
-    inner.querySelector('#export-images-btn').addEventListener('click', () => {
-      window.open('/api/games/export/images', '_blank');
-    });
-  }
 
   async function openPlayersModal() {
     const modal    = document.getElementById('players-modal');
@@ -4741,82 +4703,6 @@ if ('serviceWorker' in navigator) {
     // Bar animation is now handled by IntersectionObserver in buildStatsView (ui.js)
   }
 
-  function wireGoalsSection(container) {
-    const section = container.querySelector('#stats-goals');
-    if (!section) return;
-
-    const addGoalBtn = section.querySelector('#add-goal-btn');
-    const addGoalForm = section.querySelector('#add-goal-form');
-    const goalTypeSelect = section.querySelector('#goal-type');
-    const goalGameGroup = section.querySelector('#goal-game-group');
-    const goalYearGroup = section.querySelector('#goal-year-group');
-
-    if (addGoalBtn) {
-      addGoalBtn.addEventListener('click', () => {
-        addGoalForm.style.display = addGoalForm.style.display === 'none' ? '' : 'none';
-      });
-    }
-
-    if (goalTypeSelect) {
-      goalTypeSelect.addEventListener('change', () => {
-        const t = goalTypeSelect.value;
-        goalGameGroup.style.display = t === 'game_sessions' ? '' : 'none';
-        goalYearGroup.style.display = (t === 'sessions_year' || t === 'unique_games_year') ? '' : 'none';
-      });
-    }
-
-    const cancelBtn = section.querySelector('#goal-cancel-btn');
-    if (cancelBtn) cancelBtn.addEventListener('click', () => { addGoalForm.style.display = 'none'; });
-
-    const saveBtn = section.querySelector('#goal-save-btn');
-    if (saveBtn) {
-      saveBtn.addEventListener('click', async () => {
-        const title = section.querySelector('#goal-title').value.trim();
-        const type = section.querySelector('#goal-type').value;
-        const target = parseInt(section.querySelector('#goal-target').value, 10);
-        const gameId = section.querySelector('#goal-game-select')?.value || null;
-        const year = section.querySelector('#goal-year')?.value || null;
-        if (!title) { showToast('Please enter a title', 'error'); return; }
-        if (!target || target < 1) { showToast('Please enter a valid target', 'error'); return; }
-        if (type === 'win_rate_target' && target > 100) { showToast('Win rate target must be 1–100', 'error'); return; }
-        if (type === 'game_sessions' && !gameId) { showToast('Please select a game', 'error'); return; }
-        try {
-          await withLoading(saveBtn, async () => {
-            await API.createGoal({
-              title,
-              type,
-              target_value: target,
-              game_id: gameId ? parseInt(gameId, 10) : null,
-              year: year ? parseInt(year, 10) : null,
-            });
-            showToast('Goal created!', 'success');
-            await loadStats();
-          }, 'Saving…');
-        } catch (err) {
-          showToast(`Failed to create goal: ${classifyError(err)}`, 'error');
-        }
-      });
-    }
-
-    // Delete buttons
-    section.querySelectorAll('.goal-delete-btn').forEach(btn => {
-      btn.addEventListener('click', async (e) => {
-        e.stopPropagation();
-        const goalId = parseInt(btn.dataset.goalId, 10);
-        const ok = await showConfirm('Delete Goal', 'Remove this goal?');
-        if (!ok) return;
-        try {
-          await withLoading(btn, async () => {
-            await API.deleteGoal(goalId);
-            showToast('Goal removed.', 'success');
-            await loadStats();
-          }, '…');
-        } catch (err) {
-          showToast(`Failed to delete goal: ${classifyError(err)}`, 'error');
-        }
-      });
-    });
-  }
 
   async function _prefetchStats() {
     const statsContent = document.getElementById('stats-content');
@@ -4849,7 +4735,7 @@ if ('serviceWorker' in navigator) {
       const statsView = buildStatsView(stats, [], prefs, saveStatsPrefs, goals);
       el.appendChild(statsView);
       wireStatsView(statsView, stats);
-      wireGoalsSection(statsView);
+      wireGoalsSection(statsView, { reloadStats: loadStats });
       _injectMilestonesIntoGrid(statsView, prefs);
       _animateStatBars(el);
       _statsLoading = false;
@@ -4867,7 +4753,7 @@ if ('serviceWorker' in navigator) {
       const statsView = buildStatsView(stats, [], prefs, saveStatsPrefs, goals);
       el.appendChild(statsView);
       wireStatsView(statsView, stats);
-      wireGoalsSection(statsView);
+      wireGoalsSection(statsView, { reloadStats: loadStats });
       _injectMilestonesIntoGrid(statsView, prefs);
       _animateStatBars(el);
     } catch (err) {
@@ -4904,7 +4790,7 @@ if ('serviceWorker' in navigator) {
       const statsView = buildStatsView(stats, [], prefs, saveStatsPrefs, goals);
       el.appendChild(statsView);
       wireStatsView(statsView, stats);
-      wireGoalsSection(statsView);
+      wireGoalsSection(statsView, { reloadStats: loadStats });
       _injectMilestonesIntoGrid(statsView, prefs);
       _animateStatBars(el);
     } catch (_) { /* non-fatal */ }
@@ -5203,164 +5089,6 @@ if ('serviceWorker' in navigator) {
     });
   }
 
-  // ===== First-Visit Coach Mark Tour =====
-  const TOUR_DONE_KEY = 'cardboard_tour_done';
-  // In-memory guard: set to true the moment any maybeStartTour call claims the check.
-  // Prevents concurrent calls (loadCollection fires from many places) from each
-  // independently deciding to start the tour.
-  let _tourCheckDone = false;
-
-  const TOUR_STEPS = [
-    {
-      targetId: 'nav-btn-stats',
-      text: 'See charts, trends, and personalized insights about your collection.',
-    },
-    {
-      targetId: 'game-night-btn',
-      text: 'Get smart game suggestions for any group size or time limit.',
-      beforeShow() {
-        // Return to collection view without re-triggering loadCollection
-        if (!document.getElementById('view-collection').classList.contains('active')) {
-          document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
-          document.querySelectorAll('[data-view]').forEach(b => b.classList.remove('active'));
-          document.getElementById('view-collection').classList.add('active');
-          document.querySelectorAll('[data-view="collection"]').forEach(b => b.classList.add('active'));
-          location.hash = '';
-        }
-        // Open the filter panel so game-night-btn has layout
-        const panel = document.getElementById('filter-panel');
-        if (panel && !panel.classList.contains('open')) panel.classList.add('open');
-      },
-    },
-    {
-      targetId: 'collection-search',
-      text: 'Search and filter your collection — try typing a game name or mechanic.',
-      beforeShow() {
-        // Close the filter panel opened for the previous step (if no active filters)
-        const panel = document.getElementById('filter-panel');
-        const hasFilters = state.filterNeverPlayed || state.filterPlayers || state.filterTime
-          || (state.filterMechanics && state.filterMechanics.length)
-          || (state.filterCategories && state.filterCategories.length);
-        if (panel && panel.classList.contains('open') && !hasFilters) panel.classList.remove('open');
-      },
-    },
-  ];
-
-  function startTour() {
-    let step = 0;
-    const overlay  = document.getElementById('tour-overlay');
-    const tooltip  = document.getElementById('tour-tooltip');
-
-    // Create spotlight ring element
-    let spotlight = document.getElementById('tour-spotlight');
-    if (!spotlight) {
-      spotlight = document.createElement('div');
-      spotlight.id = 'tour-spotlight';
-      spotlight.className = 'tour-spotlight';
-      document.body.appendChild(spotlight);
-    }
-
-    function showStep(i) {
-      const stepDef = TOUR_STEPS[i];
-      if (stepDef.beforeShow) {
-        stepDef.beforeShow();
-        setTimeout(() => _positionStep(i), 300);
-      } else {
-        _positionStep(i);
-      }
-    }
-
-    function _positionStep(i) {
-      const { targetId, text } = TOUR_STEPS[i];
-      const target = document.getElementById(targetId);
-      if (!target) { nextStep(); return; }
-
-      const rect = target.getBoundingClientRect();
-      if (rect.width === 0 && rect.height === 0) { nextStep(); return; }
-
-      // Scroll target into view if it's off-screen
-      if (rect.top < 0 || rect.bottom > window.innerHeight) {
-        target.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        setTimeout(() => _positionStep(i), 400);
-        return;
-      }
-
-      const PAD = 6;
-      const isLast = i === TOUR_STEPS.length - 1;
-
-      overlay.style.display = 'block';
-      spotlight.style.display = 'block';
-      spotlight.style.top    = `${rect.top - PAD}px`;
-      spotlight.style.left   = `${rect.left - PAD}px`;
-      spotlight.style.width  = `${rect.width + PAD * 2}px`;
-      spotlight.style.height = `${rect.height + PAD * 2}px`;
-
-      // Place tooltip below target, clamped to viewport
-      const tipLeft = Math.min(Math.max(rect.left, 12), window.innerWidth - 320 - 12);
-      const tipTop  = rect.bottom + PAD + 8;
-
-      tooltip.innerHTML = `
-        <p id="tour-tooltip-text">${escapeHtml(text)}</p>
-        <div class="tour-btn-row">
-          <button class="tour-btn tour-btn-skip" id="tour-skip">Skip tour</button>
-          <button class="tour-btn tour-btn-next" id="tour-next">${isLast ? 'Done' : 'Got it \u2192'}</button>
-        </div>`;
-      tooltip.style.left = `${tipLeft}px`;
-      tooltip.style.top  = `${tipTop}px`;
-      tooltip.style.display = 'block';
-
-      tooltip.querySelector('#tour-next').addEventListener('click', nextStep);
-      tooltip.querySelector('#tour-skip').addEventListener('click', endTour);
-    }
-
-    function nextStep() {
-      step += 1;
-      if (step >= TOUR_STEPS.length) { endTour(); return; }
-      showStep(step);
-    }
-
-    async function endTour() {
-      overlay.style.display   = 'none';
-      tooltip.style.display   = 'none';
-      spotlight.style.display = 'none';
-      _tourCheckDone = true;
-      try { localStorage.setItem(TOUR_DONE_KEY, '1'); } catch (_) { /* quota or private browsing */ }
-      // Await the server call so the flag persists even across browsers/devices.
-      // Without this, closing the tab immediately after completing the tour can
-      // abort the fetch and leave the server-side flag unset, causing the tour to
-      // reappear on the next visit from a different browser.
-      try { await API.setSetting(TOUR_DONE_KEY, '1'); } catch (_) { /* non-fatal */ }
-    }
-
-    showStep(0);
-  }
-
-  async function maybeStartTour() {
-    if (_tourCheckDone) return;
-    if (!state.games || state.games.length === 0) return;
-    // Fast path: localStorage cache avoids a server round-trip on repeat visits
-    let localDone = false;
-    try { localDone = !!localStorage.getItem(TOUR_DONE_KEY); } catch (_) { /* quota or unavailable */ }
-    if (localDone) { _tourCheckDone = true; return; }
-    // Claim the check before any await so concurrent calls from other loadCollection
-    // invocations bail out immediately rather than each starting their own tour.
-    _tourCheckDone = true;
-    try {
-      const { value } = await API.getSetting(TOUR_DONE_KEY);
-      if (value === '1') {
-        // Sync local cache so future page loads skip the server call
-        try { localStorage.setItem(TOUR_DONE_KEY, '1'); } catch (_) { /* non-fatal */ }
-        return;
-      }
-    } catch (_) {
-      // If the server is unreachable, fall through and show the tour
-    }
-    // Brief delay so the collection renders first
-    setTimeout(startTour, 600);
-  }
-
-  // Wire retake tour button
-
   // ===== Pause Mode =====
   const PAUSE_MODE_KEY = 'cardboard_pause_mode';
   const pauseBtn = document.getElementById('pause-mode-btn');
@@ -5405,11 +5133,6 @@ if ('serviceWorker' in navigator) {
 
   _syncPauseUI();
 
-  document.getElementById('retake-tour-btn')?.addEventListener('click', async () => {
-    try { localStorage.removeItem(TOUR_DONE_KEY); } catch (_) { /* quota or unavailable */ }
-    try { await API.setSetting(TOUR_DONE_KEY, ''); } catch (_) { /* non-fatal */ }
-    _tourCheckDone = false;
-    startTour();
-  });
+  document.getElementById('retake-tour-btn')?.addEventListener('click', resetTour);
 
 })();

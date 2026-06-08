@@ -116,6 +116,42 @@ def _compute_current_value(goal: models.Goal, db: Session) -> int:
         )
         return int(wins / total * 100)
 
+    elif goal.type == "distinct_games":
+        return (
+            db.query(func.count(func.distinct(models.PlaySession.game_id)))
+            .scalar() or 0
+        )
+
+    elif goal.type == "solo_sessions":
+        return (
+            db.query(func.count())
+            .select_from(models.PlaySession)
+            .filter(models.PlaySession.solo == True)
+            .scalar() or 0
+        )
+
+    elif goal.type == "cost_per_play":
+        # Average cost per play across all owned games with purchase price
+        # Stored as cents (integer) to match target_value format
+        total_price = (
+            db.query(func.sum(models.Game.purchase_price))
+            .filter(models.Game.status == "owned", models.Game.purchase_price.isnot(None))
+            .scalar() or 0
+        )
+        # Count only sessions of owned, priced games so this matches the
+        # dashboard's collection-wide avg_cost_per_play denominator.
+        total_sessions = (
+            db.query(func.count())
+            .select_from(models.PlaySession)
+            .join(models.Game, models.Game.id == models.PlaySession.game_id)
+            .filter(models.Game.status == "owned", models.Game.purchase_price.isnot(None))
+            .scalar() or 0
+        )
+        if total_sessions == 0:
+            return int(total_price * 100)  # No plays yet = full price
+        # Average cost per play = total_price / total_sessions
+        return int((total_price / total_sessions) * 100)
+
     return 0
 
 
@@ -165,10 +201,17 @@ def check_goals(db: Session = Depends(get_db)):
     changed = False
     for goal in goals:
         current = _compute_current_value(goal, db)
-        if not goal.is_complete and current >= goal.target_value:
-            goal.is_complete = True
-            goal.completed_at = datetime.now(timezone.utc)
-            changed = True
+        if not goal.is_complete:
+            # cost_per_play is a "lower is better" metric — complete when current <= target
+            if goal.type == "cost_per_play":
+                if current <= goal.target_value:
+                    goal.is_complete = True
+                    goal.completed_at = datetime.now(timezone.utc)
+                    changed = True
+            elif current >= goal.target_value:
+                goal.is_complete = True
+                goal.completed_at = datetime.now(timezone.utc)
+                changed = True
         results.append(_build_response(goal, current, game_names.get(goal.game_id)))
     if changed:
         db.commit()
@@ -196,7 +239,13 @@ def create_goal(data: schemas.GoalCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(goal)
     current = _compute_current_value(goal, db)
-    if current >= goal.target_value:
+    # cost_per_play is "lower is better" — complete when current <= target
+    if goal.type == "cost_per_play":
+        if current <= goal.target_value:
+            goal.is_complete = True
+            goal.completed_at = datetime.now(timezone.utc)
+            db.commit()
+    elif current >= goal.target_value:
         goal.is_complete = True
         goal.completed_at = datetime.now(timezone.utc)
         db.commit()

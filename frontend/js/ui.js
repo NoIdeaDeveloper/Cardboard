@@ -2068,11 +2068,15 @@ function buildCollectionValueSection(collectionValue, visible) {
   // Value summary pills (server-computed totals covering all owned games)
   const pills = document.createElement('div');
   pills.className = 'value-summary';
-  pills.innerHTML = [
+  const pillData = [
     { label: 'Owned Value',    value: '$' + collectionValue.owned_total.toFixed(2) },
     { label: 'Avg Price',      value: '$' + collectionValue.avg_price.toFixed(2) },
     { label: 'Unplayed Value', value: '$' + (collectionValue.unplayed_total || 0).toFixed(2) },
-  ].map(p => `<div class="value-pill"><div class="value-pill-value">${p.value}</div><div class="value-pill-label">${p.label}</div></div>`).join('');
+  ];
+  if (collectionValue.avg_cost_per_play != null) {
+    pillData.push({ label: 'Avg Cost/Play', value: '$' + collectionValue.avg_cost_per_play.toFixed(2) });
+  }
+  pills.innerHTML = pillData.map(p => `<div class="value-pill"><div class="value-pill-value">${p.value}</div><div class="value-pill-label">${p.label}</div></div>`).join('');
   el.appendChild(pills);
 
   // Best Value — lowest $/session
@@ -2942,13 +2946,22 @@ function buildStatsView(stats, games, prefs = {}, onPrefsChange = null, goals = 
       total_hours:       'Total Hours Played',
       category_coverage: 'Categories Covered',
       win_rate_target:   'Win Rate Target',
+      distinct_games:    'Distinct Games Played',
+      solo_sessions:     'Solo Sessions',
+      cost_per_play:     'Cost Per Play',
     };
     const goalCards = goals.length
       ? goals.map(g => {
-          const pct = Math.min(100, Math.round((g.current_value / g.target_value) * 100));
+          const isCostPerPlay = g.type === 'cost_per_play';
+          const pct = isCostPerPlay
+            ? Math.min(100, Math.round((g.target_value / g.current_value) * 100))
+            : Math.min(100, Math.round((g.current_value / g.target_value) * 100));
           const complete = g.is_complete;
           const completedDate = g.completed_at ? new Date(g.completed_at).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' }) : null;
           const subtitle = g.game_name ? `${GOAL_TYPE_LABELS[g.type] || g.type} — ${escapeHtml(g.game_name)}` : (GOAL_TYPE_LABELS[g.type] || g.type);
+          const progressText = isCostPerPlay
+            ? `$${(g.current_value / 100).toFixed(2)} / $${(g.target_value / 100).toFixed(2)}`
+            : `${g.current_value} / ${g.target_value}`;
           return `
             <div class="goal-card${complete ? ' goal-complete' : ''}" data-goal-id="${g.id}">
               <div class="goal-card-header">
@@ -2962,7 +2975,7 @@ function buildStatsView(stats, games, prefs = {}, onPrefsChange = null, goals = 
                 <div class="goal-progress-bar" style="width:${pct}%"></div>
               </div>
               <div class="goal-card-footer">
-                <span class="goal-progress-text">${g.current_value} / ${g.target_value}</span>
+                <span class="goal-progress-text">${progressText}</span>
                 ${complete
                   ? `<span class="goal-complete-badge">✓ Complete${completedDate ? ` · ${completedDate}` : ''}</span>`
                   : `<span class="goal-pct">${pct}%</span>`}
@@ -2984,11 +2997,11 @@ function buildStatsView(stats, games, prefs = {}, onPrefsChange = null, goals = 
             <div class="health-info-factors">
               <div class="health-info-factor">
                 <div class="health-info-factor-header"><span class="hb-label">Sessions</span></div>
-                <span class="hb-detail" style="font-size:0.8rem">Total Sessions · Sessions This Year · Total Hours Played · Different Games This Year · Sessions for One Game</span>
+                <span class="hb-detail" style="font-size:0.8rem">Total Sessions · Sessions This Year · Total Hours Played · Different Games This Year · Distinct Games Played · Solo Sessions · Sessions for One Game</span>
               </div>
               <div class="health-info-factor">
                 <div class="health-info-factor-header"><span class="hb-label">Collection</span></div>
-                <span class="hb-detail" style="font-size:0.8rem">Play All Owned Games · Unique Mechanics Played · Categories Covered</span>
+                <span class="hb-detail" style="font-size:0.8rem">Play All Owned Games · Unique Mechanics Played · Categories Covered · Cost Per Play</span>
               </div>
               <div class="health-info-factor">
                 <div class="health-info-factor-header"><span class="hb-label">Performance</span></div>
@@ -3014,12 +3027,15 @@ function buildStatsView(stats, games, prefs = {}, onPrefsChange = null, goals = 
                   <option value="sessions_year">Sessions This Year</option>
                   <option value="total_hours">Total Hours Played</option>
                   <option value="unique_games_year">Different Games This Year</option>
+                  <option value="distinct_games">Distinct Games Played</option>
+                  <option value="solo_sessions">Solo Sessions</option>
                   <option value="game_sessions">Sessions for One Game</option>
                 </optgroup>
                 <optgroup label="Collection">
                   <option value="play_all_owned">Play All Owned Games</option>
                   <option value="unique_mechanics">Unique Mechanics Played</option>
                   <option value="category_coverage">Categories Covered</option>
+                  <option value="cost_per_play">Cost Per Play</option>
                 </optgroup>
                 <optgroup label="Performance">
                   <option value="win_rate_target">Win Rate Target (%)</option>

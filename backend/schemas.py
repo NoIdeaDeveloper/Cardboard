@@ -332,6 +332,7 @@ class PlayerStatsResponse(BaseModel):
 GOAL_TYPES = frozenset({
     'sessions_total', 'sessions_year', 'play_all_owned', 'game_sessions', 'unique_mechanics',
     'unique_games_year', 'total_hours', 'category_coverage', 'win_rate_target',
+    'distinct_games', 'solo_sessions', 'cost_per_play',
 })
 
 
@@ -429,6 +430,7 @@ class CollectionValueStats(BaseModel):
     owned_total: Optional[float] = None      # total purchase price of owned games
     avg_price: Optional[float] = None        # average purchase price of owned games
     unplayed_total: Optional[float] = None   # total purchase price of unplayed owned games
+    avg_cost_per_play: Optional[float] = None  # collection-wide average cost per play
     best_value_by_play: List[ValueGameEntry] = []   # lowest $/session (top 5)
     best_value_by_time: List[ValueGameEntry] = []   # lowest $/hr (top 5)
     most_expensive_unplayed: List[ValueGameEntry] = []  # priciest owned, never played (top 5)

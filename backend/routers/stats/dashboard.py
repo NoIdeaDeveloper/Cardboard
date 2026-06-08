@@ -248,6 +248,12 @@ def get_stats(db: Session = Depends(get_db)):
             for r in bvt
         ]
 
+        # Collection-wide average cost per play
+        total_owned_price = sum(r.purchase_price for r in owned_priced)
+        total_owned_sessions = sum(sc_map.get(r.id, 0) for r in owned_priced)
+        if total_owned_sessions > 0:
+            collection_value.avg_cost_per_play = round(total_owned_price / total_owned_sessions, 2)
+
         # Most Expensive Unplayed: top 5 priciest owned, never played
         meu = sorted(
             [r for r in owned_priced if not r.last_played],
