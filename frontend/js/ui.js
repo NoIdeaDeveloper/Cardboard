@@ -2187,29 +2187,31 @@ function buildCollectionSettingsModal(prefs, onPrefsChange) {
   }).join('');
 
   const el = document.createElement('div');
-  el.className = 'collection-settings-modal-content';
+  el.className = 'modal-content-panel';
   el.innerHTML = `
-    <div class="modal-header">
+    <div class="modal-panel-header">
       <h2 id="collection-settings-title">Customize Collection Page</h2>
-      <button class="modal-close-btn" id="collection-settings-close" aria-label="Close settings">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      <button class="modal-close" id="collection-settings-close" aria-label="Close settings">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </button>
     </div>
-    <p class="settings-modal-desc">Toggle visibility and drag to reorder elements on your collection page.</p>
-    <div class="settings-modal-list" id="collection-settings-list">
-      ${sectionTogglesHtml}
-    </div>
-    <div class="settings-modal-divider"></div>
-    <span class="settings-modal-group-label">Toolbar</span>
-    <div class="settings-modal-list settings-modal-list-toolbar">
-      ${toolbarTogglesHtml}
+    <div class="modal-body">
+      <p class="settings-modal-desc">Toggle visibility and drag to reorder elements on your collection page.</p>
+      <div class="settings-modal-list" id="collection-settings-list">
+        ${sectionTogglesHtml}
+      </div>
+      <div class="settings-modal-divider"></div>
+      <span class="settings-modal-group-label">Toolbar</span>
+      <div class="settings-modal-list settings-modal-list-toolbar">
+        ${toolbarTogglesHtml}
+      </div>
     </div>`;
 
   const settingsList = el.querySelector('#collection-settings-list');
 
   // Wire close button
   el.querySelector('#collection-settings-close').addEventListener('click', () => {
-    closeCollectionSettingsModal();
+    closeModal();
   });
 
   // Wire all checkboxes (both section and toolbar toggles)
@@ -2270,82 +2272,9 @@ function buildCollectionSettingsModal(prefs, onPrefsChange) {
   return el;
 }
 
-let _collectionSettingsPrevFocus = null;
-let _collectionSettingsTrapHandler = null;
-let _collectionSettingsEscHandler = null;
-
 function openCollectionSettingsModal(prefs, onPrefsChange) {
-  const modal = document.getElementById('collection-settings-modal');
-  // Guard: if already open, close first to clean up handlers
-  if (modal.classList.contains('open')) {
-    closeCollectionSettingsModal();
-  }
-  const inner = document.getElementById('collection-settings-inner');
-  inner.innerHTML = '';
-  inner.appendChild(buildCollectionSettingsModal(prefs, onPrefsChange));
-  modal.style.display = 'flex';
-  pushModalOpen();
-  _collectionSettingsPrevFocus = document.activeElement;
-
-  requestAnimationFrame(() => {
-    modal.classList.add('open');
-    const focusables = [...modal.querySelectorAll(FOCUSABLE)]
-      .filter(el => el.offsetParent !== null);
-    if (focusables.length) focusables[0].focus();
-
-    // Trap Tab key within modal
-    _collectionSettingsTrapHandler = (e) => {
-      if (e.key !== 'Tab') return;
-      const els = [...modal.querySelectorAll(FOCUSABLE)]
-        .filter(el => el.offsetParent !== null);
-      if (!els.length) return;
-      const first = els[0], last = els[els.length - 1];
-      if (e.shiftKey && document.activeElement === first) {
-        e.preventDefault();
-        last.focus();
-      } else if (!e.shiftKey && document.activeElement === last) {
-        e.preventDefault();
-        first.focus();
-      }
-    };
-    modal.addEventListener('keydown', _collectionSettingsTrapHandler);
-  });
-
-  // Close on backdrop click
-  const backdrop = document.getElementById('collection-settings-backdrop');
-  backdrop.onclick = () => closeCollectionSettingsModal();
-
-  // Close on Escape
-  _collectionSettingsEscHandler = (e) => {
-    if (e.key === 'Escape') closeCollectionSettingsModal();
-  };
-  document.addEventListener('keydown', _collectionSettingsEscHandler);
-}
-
-function closeCollectionSettingsModal() {
-  const modal = document.getElementById('collection-settings-modal');
-  if (!modal.classList.contains('open')) return;
-
-  modal.classList.remove('open');
-
-  if (_collectionSettingsTrapHandler) {
-    modal.removeEventListener('keydown', _collectionSettingsTrapHandler);
-    _collectionSettingsTrapHandler = null;
-  }
-  if (_collectionSettingsEscHandler) {
-    document.removeEventListener('keydown', _collectionSettingsEscHandler);
-    _collectionSettingsEscHandler = null;
-  }
-  if (_collectionSettingsPrevFocus) {
-    _collectionSettingsPrevFocus.focus();
-    _collectionSettingsPrevFocus = null;
-  }
-
-  setTimeout(() => {
-    modal.style.display = 'none';
-    document.getElementById('collection-settings-inner').innerHTML = '';
-    popModalOpen();
-  }, 200);
+  const content = buildCollectionSettingsModal(prefs, onPrefsChange);
+  openModal(content);
 }
 
 function buildStatsView(stats, games, prefs = {}, onPrefsChange = null, goals = []) {

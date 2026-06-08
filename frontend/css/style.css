@@ -6451,30 +6451,6 @@ img.player-profile-avatar { display: block; }
 }
 
 /* ===== Collection Settings Modal ===== */
-#collection-settings-modal { z-index: 210; }
-.collection-settings-modal-content .modal-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 4px;
-}
-.collection-settings-modal-content .modal-header h2 {
-  font-size: 1.125rem;
-  font-weight: 600;
-  margin: 0;
-}
-.collection-settings-modal-content .modal-close-btn {
-  background: none;
-  border: none;
-  color: var(--text-2);
-  cursor: pointer;
-  padding: 4px;
-  border-radius: var(--radius-sm);
-  line-height: 0;
-  transition: color 0.15s;
-}
-.collection-settings-modal-content .modal-close-btn:hover { color: var(--text); }
-.collection-settings-modal-content .modal-close-btn svg { width: 20px; height: 20px; }
 .settings-modal-desc {
   font-size: 0.8125rem;
   color: var(--text-3);

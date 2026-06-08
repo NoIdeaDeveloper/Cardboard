@@ -132,6 +132,10 @@ if ('serviceWorker' in navigator) {
   function renderActionPlan() {
     const container = document.getElementById('action-plan-card');
     if (!container) return;
+    if (currentCollectionDisplayPrefs.show_action_plan === false) {
+      container.style.display = 'none';
+      return;
+    }
     const cs = state.collectionStats;
     if (!cs) { container.style.display = 'none'; return; }
 
@@ -223,6 +227,10 @@ if ('serviceWorker' in navigator) {
     const myReqId = ++_recommendReqId;
     const container = document.getElementById('recommend-card');
     if (!container) return;
+    if (currentCollectionDisplayPrefs.show_recommend_card === false) {
+      container.style.display = 'none';
+      return;
+    }
     const skips = getRecommendSkips();
     const params = new URLSearchParams();
     if (skips.length) params.set('exclude', skips.join(','));
@@ -265,6 +273,10 @@ if ('serviceWorker' in navigator) {
   function renderReminderBanner() {
     const banner = document.getElementById('reminder-banner');
     if (!banner) return;
+    if (currentCollectionDisplayPrefs.show_reminder_banner === false) {
+      banner.style.display = 'none';
+      return;
+    }
     const cs = state.collectionStats;
     if (!cs) { banner.style.display = 'none'; return; }
 
@@ -871,9 +883,9 @@ if ('serviceWorker' in navigator) {
       if (collectionStats !== null) state.collectionStats = collectionStats;
       buildDataLists();
       renderCollection();
-      renderReminderBanner();
-      loadRecommendCard();
-      renderActionPlan();
+      if (currentCollectionDisplayPrefs.show_reminder_banner !== false) renderReminderBanner();
+      if (currentCollectionDisplayPrefs.show_recommend_card !== false) loadRecommendCard();
+      if (currentCollectionDisplayPrefs.show_action_plan !== false) renderActionPlan();
       maybeStartTour();
       _maybeShowWeeklySummary();
     } catch (err) {
@@ -1288,6 +1300,10 @@ if ('serviceWorker' in navigator) {
   function renderRecentlyPlayedShelf() {
     const shelf = document.getElementById('recently-played-shelf');
     if (!shelf) return;
+    if (currentCollectionDisplayPrefs.show_recently_played === false) {
+      shelf.style.display = 'none';
+      return;
+    }
     const recentlyPlayed = state.games
       .filter(g => g.last_played && g.status === 'owned' && !g.parent_game_id)
       .sort((a, b) => new Date(b.last_played) - new Date(a.last_played))
@@ -1472,11 +1488,15 @@ if ('serviceWorker' in navigator) {
       document.getElementById('no-results-clear-filters')?.addEventListener('click', () => {
         document.getElementById('filter-clear-all')?.click();
       });
+    if (currentCollectionDisplayPrefs.show_recently_played !== false) {
       renderRecentlyPlayedShelf();
+    }
       return;
     }
 
-    renderRecentlyPlayedShelf();
+    if (currentCollectionDisplayPrefs.show_recently_played !== false) {
+      renderRecentlyPlayedShelf();
+    }
 
     // Wishlist value banner
     const existingBanner = document.querySelector('.wishlist-banner');
@@ -2481,7 +2501,7 @@ if ('serviceWorker' in navigator) {
         if (searchEl) searchEl.focus();
       } else if (e.key === 'r' || e.key === 'R') {
         e.preventDefault();
-        loadRecommendCard();
+        if (currentCollectionDisplayPrefs.show_recommend_card !== false) loadRecommendCard();
       }
     });
   }
