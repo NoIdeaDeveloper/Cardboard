@@ -19,6 +19,100 @@ function _buildLocationDatalist(games, field) {
     .join('');
 }
 
+// ===== Chip Input Helper =====
+function _renderChipInput(containerId, initialTags, placeholder, datalistId) {
+  const container = document.getElementById(containerId);
+  if (!container) return null;
+  container.innerHTML = '';
+  container.className = 'chip-input';
+  container.dataset.tags = JSON.stringify(initialTags || []);
+
+  const addTag = (tag) => {
+    const tagStr = tag.trim();
+    if (!tagStr) return;
+    const tags = JSON.parse(container.dataset.tags || '[]');
+    if (!tags.includes(tagStr)) {
+      tags.push(tagStr);
+      container.dataset.tags = JSON.stringify(tags);
+      _renderChip(container, tagStr);
+    }
+  };
+
+  // Render existing tags
+  for (const tag of (initialTags || [])) {
+    _renderChip(container, tag);
+  }
+
+  // Input field
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.placeholder = placeholder;
+  if (datalistId) input.setAttribute('list', datalistId);
+  input.autocomplete = 'off';
+  container.appendChild(input);
+
+  // Handle comma/enter to add tags
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ',') {
+      e.preventDefault();
+      addTag(input.value);
+      input.value = '';
+    }
+    if (e.key === 'Backspace' && !input.value) {
+      const tags = JSON.parse(container.dataset.tags || '[]');
+      if (tags.length) {
+        const removed = tags.pop();
+        container.dataset.tags = JSON.stringify(tags);
+        const chips = container.querySelectorAll('.chip-input-chip');
+        if (chips.length) chips[chips.length - 1].remove();
+      }
+    }
+  });
+
+  // Blur adds remaining text as tag
+  input.addEventListener('blur', () => {
+    if (input.value.trim()) {
+      addTag(input.value);
+      input.value = '';
+    }
+  });
+
+  // Click on container focuses input
+  container.addEventListener('click', (e) => {
+    if (e.target === container) input.focus();
+  });
+
+  return container;
+}
+
+function _renderChip(container, tag) {
+  const chip = document.createElement('span');
+  chip.className = 'chip-input-chip';
+  chip.textContent = tag;
+  const removeBtn = document.createElement('button');
+  removeBtn.className = 'chip-remove';
+  removeBtn.innerHTML = '×';
+  removeBtn.setAttribute('aria-label', `Remove ${tag}`);
+  removeBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const tags = JSON.parse(container.dataset.tags || '[]');
+    const idx = tags.indexOf(tag);
+    if (idx > -1) {
+      tags.splice(idx, 1);
+      container.dataset.tags = JSON.stringify(tags);
+    }
+    chip.remove();
+  });
+  chip.appendChild(removeBtn);
+  container.insertBefore(chip, container.querySelector('input'));
+}
+
+function _getChipTags(containerId) {
+  const container = document.getElementById(containerId);
+  if (!container) return [];
+  return JSON.parse(container.dataset.tags || '[]');
+}
+
 // ===== Game Card (Grid) =====
 
 function buildGameCard(game) {
@@ -121,7 +215,6 @@ function buildGameCard(game) {
         ${cardLocationHtml}
         ${expansionBadgeHtml}
         ${game.loaned_to ? `<span class="loan-badge">Loaned to ${escapeHtml(game.loaned_to)}</span>` : ''}
-        ${game.date_added ? `<span class="game-date-added">Added ${escapeHtml(formatDatetime(game.date_added))}</span>` : ''}
         ${game.share_hidden ? `<span class="share-hidden-badge">Hidden from share</span>` : ''}
       </div>
     </div>`;
@@ -178,7 +271,6 @@ function buildGameListItem(game) {
       ${listExpBadge}
       ${game.loaned_to ? `<span class="loan-badge">Loaned to ${escapeHtml(game.loaned_to)}</span>` : ''}
       ${game.last_played ? `<div class="last-played-line">Played ${escapeHtml(formatDate(game.last_played))}</div>` : ''}
-      ${game.date_added ? `<div class="last-played-line">Added ${escapeHtml(formatDatetime(game.date_added))}</div>` : ''}
       ${(game.show_location && game.location) ? `<div class="location-line">${escapeHtml(game.location)}</div>` : ''}
       ${game.status === 'owned' ? `<button class="quick-log-btn" type="button">+ Log Play</button>` : ''}
       ${game.status === 'wishlist' ? `<button class="quick-owned-btn btn btn-ghost btn-sm" type="button" title="Move to collection">✓ Own It</button>` : ''}
@@ -593,24 +685,24 @@ function buildModalContent(game, sessions, onSave, onDelete, onAddSession, onDel
             <span class="field-error" id="err-difficulty"></span>
           </div>
           <div class="form-group full-width">
-            <label for="edit-categories">Categories <span class="hint">(comma-separated)</span></label>
-            <input type="text" id="edit-categories" class="form-input" value="${escapeHtml(categories.join(', '))}" autocomplete="off">
+            <label for="edit-categories">Categories <span class="hint">(type and press Enter)</span></label>
+            <div id="edit-categories" class="chip-input" data-list="dl-categories"></div>
           </div>
           <div class="form-group full-width">
-            <label for="edit-mechanics">Mechanics <span class="hint">(comma-separated)</span></label>
-            <input type="text" id="edit-mechanics" class="form-input" value="${escapeHtml(mechanics.join(', '))}" autocomplete="off">
+            <label for="edit-mechanics">Mechanics <span class="hint">(type and press Enter)</span></label>
+            <div id="edit-mechanics" class="chip-input" data-list="dl-mechanics"></div>
           </div>
           <div class="form-group full-width">
-            <label for="edit-designers">Designers <span class="hint">(comma-separated)</span></label>
-            <input type="text" id="edit-designers" class="form-input" value="${escapeHtml(designers.join(', '))}" autocomplete="off">
+            <label for="edit-designers">Designers <span class="hint">(type and press Enter)</span></label>
+            <div id="edit-designers" class="chip-input" data-list="dl-designers"></div>
           </div>
           <div class="form-group full-width">
-            <label for="edit-publishers">Publishers <span class="hint">(comma-separated)</span></label>
-            <input type="text" id="edit-publishers" class="form-input" value="${escapeHtml(publishers.join(', '))}" autocomplete="off">
+            <label for="edit-publishers">Publishers <span class="hint">(type and press Enter)</span></label>
+            <div id="edit-publishers" class="chip-input" data-list="dl-publishers"></div>
           </div>
           <div class="form-group full-width">
-            <label for="edit-labels">Labels <span class="hint">(comma-separated)</span></label>
-            <input type="text" id="edit-labels" class="form-input" value="${escapeHtml(modalLabels.join(', '))}" autocomplete="off">
+            <label for="edit-labels">Labels <span class="hint">(type and press Enter)</span></label>
+            <div id="edit-labels" class="chip-input" data-list="dl-labels"></div>
           </div>
           ${baseGameEditHtml}
           <div class="form-group">
@@ -1696,11 +1788,11 @@ function buildModalContent(game, sessions, onSave, onDelete, onAddSession, onDel
         difficulty:       (() => { const _d = parseFloat(el.querySelector('#edit-difficulty').value); return isNaN(_d) ? null : _d; })(),
         image_url:        currentImageUrl,
         description:      el.querySelector('#edit-description').value.trim() || null,
-        categories:       csvToJson(el.querySelector('#edit-categories').value),
-        mechanics:        csvToJson(el.querySelector('#edit-mechanics').value),
-        designers:        csvToJson(el.querySelector('#edit-designers').value),
-        publishers:       csvToJson(el.querySelector('#edit-publishers').value),
-        labels:           csvToJson(el.querySelector('#edit-labels').value),
+        categories:       _getChipTags('edit-categories'),
+        mechanics:        _getChipTags('edit-mechanics'),
+        designers:        _getChipTags('edit-designers'),
+        publishers:       _getChipTags('edit-publishers'),
+        labels:           _getChipTags('edit-labels'),
         purchase_date:    el.querySelector('#edit-purchase-date').value || null,
         purchase_price:   el.querySelector('#edit-purchase-price').value !== '' ? parseFloat(el.querySelector('#edit-purchase-price').value) : null,
         sale_price:       el.querySelector('#edit-sale-price').value !== '' ? parseFloat(el.querySelector('#edit-sale-price').value) : null,
@@ -1981,11 +2073,21 @@ function openSingleImageLightbox(url, alt = '') {
 function buildAddedByMonthFromEntries(entries) {
   if (!entries || !entries.length) return '';
   const max = Math.max(...entries.map(e => e.count), 1);
-  return entries.map(e => `<div class="stat-bar-row" data-month="${escapeHtml(e.month)}" data-type="added" data-count="${escapeHtml(String(e.count))}">
+  const emptyCount = entries.filter(e => e.count === 0).length;
+  const showCollapse = emptyCount > 3 && entries.length > 6;
+  let hiddenCount = 0;
+  return entries.map((e, i) => {
+    const isEmpty = e.count === 0;
+    if (showCollapse && isEmpty && hiddenCount < emptyCount - 2) {
+      hiddenCount++;
+      return '';
+    }
+    return `<div class="stat-bar-row" data-month="${escapeHtml(e.month)}" data-type="added" data-count="${escapeHtml(String(e.count))}">
           <span class="stat-bar-label">${escapeHtml(e.month)}</span>
           <div class="stat-bar-track"><div class="stat-bar-fill" style="width:0%" data-target-width="${e.count ? Math.round(e.count / max * 100) : 0}%"></div></div>
           <span class="stat-bar-count">${e.count}</span>
-        </div>`).join('');
+        </div>`;
+  }).join('') + (showCollapse ? `<div class="stat-bar-collapse-note">${hiddenCount} quiet ${pluralize(hiddenCount, 'month')} hidden</div>` : '');
 }
 
 
@@ -2304,7 +2406,7 @@ function openCollectionSettingsModal(prefs, onPrefsChange) {
   openModal(content);
 }
 
-function buildStatsView(stats, games, prefs = {}, onPrefsChange = null, goals = []) {
+function buildStatsView(stats, games, prefs = {}, onPrefsChange = null, goals = [], deltas = null) {
   const SECTION_DEFAULTS = {
     show_summary: true, show_most_played: true, show_top_players: true,
     show_recently_played: true,
@@ -2435,6 +2537,7 @@ function buildStatsView(stats, games, prefs = {}, onPrefsChange = null, goals = 
       text: `You have <strong>${wishlistCount}</strong> ${wishlistCount !== 1 ? 'games' : 'game'} on your wishlist${topWish ? ` — top pick: <strong>${escapeHtml(topWish.name)}</strong>` : ''}.`,
       gameId: topWish ? topWish.id : null,
       action: topWish ? 'View game' : null,
+      drilldown: 'wishlist',
     });
   }
   const unplayedWithMechanic = stats.unplayed_with_top_mechanic || 0;
@@ -2450,18 +2553,39 @@ function buildStatsView(stats, games, prefs = {}, onPrefsChange = null, goals = 
   const insightsHtml = insightNudges.length ? `
     <div class="insight-nudges">
       ${insightNudges.map(n => `
-        <div class="insight-nudge"${n.gameId ? ` data-game-id="${n.gameId}" style="cursor:pointer"` : ''}>
+        <div class="insight-nudge"${n.gameId || n.drilldown ? ` data-game-id="${n.gameId || ''}" data-drilldown="${n.drilldown || ''}" style="cursor:pointer"` : ''}>
           <div class="insight-nudge-icon">${n.icon}</div>
           <div class="insight-nudge-text">${n.text}</div>
           ${n.action && n.gameId ? `<button class="insight-nudge-action">${escapeHtml(n.action)}</button>` : ''}
         </div>`).join('')}
     </div>` : '';
 
+  function _deltaHtml(label) {
+    if (!deltas) return '';
+    const keyMap = {
+      'Total Games': 'total_games',
+      'Owned': 'owned',
+      'Wishlist': 'wishlist',
+      'Play Sessions': 'total_sessions',
+      'Hours Played': 'total_hours',
+      'Never Played': 'never_played',
+    };
+    const key = keyMap[label];
+    if (!key || !(key in deltas)) return '';
+    const val = deltas[key];
+    const cls = val > 0 ? 'positive' : val < 0 ? 'negative' : 'neutral';
+    const arrow = val > 0 ? '↑' : val < 0 ? '↓' : '→';
+    const absVal = Math.abs(val);
+    const display = absVal === Math.floor(absVal) ? absVal : absVal.toFixed(1);
+    return `<div class="stat-card-delta ${cls}">${arrow} ${display}</div>`;
+  }
+
   const cardsHtml = `<div class="stat-cards" data-section="summary"${!currentPrefs.show_summary ? ' style="display:none"' : ''}>
     ${statDefs.map(c => `
       <div class="stat-card"${c.drilldown ? ` data-drilldown="${c.drilldown}" title="View in collection"` : ''}>
         <div class="stat-card-value">${c.raw ? c.value : escapeHtml(String(c.value))}</div>
         <div class="stat-card-label">${escapeHtml(c.label)}</div>
+        ${_deltaHtml(c.label)}
       </div>`).join('')}
   </div>`;
 
@@ -3117,6 +3241,26 @@ function buildStatsView(stats, games, prefs = {}, onPrefsChange = null, goals = 
   };
   const orderedSectionsHtml = currentPrefs.section_order.map(k => sectionsMap[k] || '').join('');
 
+  // Jump-nav chips
+  const jumpNavItems = [
+    { key: 'summary',          label: 'Overview' },
+    { key: 'most_played',      label: 'Most Played' },
+    { key: 'top_players',      label: 'Players' },
+    { key: 'recently_played',  label: 'Activity' },
+    { key: 'ratings',          label: 'Ratings' },
+    { key: 'added_by_month',   label: 'Growth' },
+    { key: 'play_heatmap',     label: 'Heatmap' },
+    { key: 'collection_value', label: 'Value' },
+    { key: 'goals',            label: 'Goals' },
+  ].filter(item => currentPrefs.section_order.includes(item.key) && currentPrefs[`show_${item.key}`] !== false);
+
+  const jumpNavHtml = jumpNavItems.length ? `
+    <ul class="stats-jump-nav" id="stats-jump-nav" role="tablist" aria-label="Jump to section">
+      ${jumpNavItems.map(item => `
+        <li><button class="stats-jump-chip" data-target="${item.key}" role="tab">${escapeHtml(item.label)}</button></li>
+      `).join('')}
+    </ul>` : '';
+
   el.innerHTML = `
     ${insightsHtml}
     <div class="stats-header">
@@ -3128,6 +3272,7 @@ function buildStatsView(stats, games, prefs = {}, onPrefsChange = null, goals = 
         </svg>
       </button>
     </div>
+    ${jumpNavHtml}
     <div class="stats-settings-panel" id="stats-settings-panel" style="display:none">
       <div class="stats-settings-list" id="stats-settings-list">
         ${settingsTogglesHtml}
@@ -3268,6 +3413,32 @@ function buildStatsView(stats, games, prefs = {}, onPrefsChange = null, goals = 
       if (onPrefsChange) onPrefsChange(currentPrefs);
     });
   });
+
+  // Jump nav click handling
+  const jumpNav = el.querySelector('#stats-jump-nav');
+  if (jumpNav) {
+    jumpNav.addEventListener('click', e => {
+      const chip = e.target.closest('.stats-jump-chip');
+      if (!chip) return;
+      const target = el.querySelector(`[data-section="${chip.dataset.target}"]`);
+      if (target) {
+        target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    });
+  }
+
+  // IntersectionObserver to highlight active jump nav chip
+  if (jumpNav && 'IntersectionObserver' in window) {
+    const sectionObserver = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        const chip = jumpNav.querySelector(`[data-target="${entry.target.dataset.section}"]`);
+        if (chip) {
+          chip.classList.toggle('active', entry.isIntersecting);
+        }
+      });
+    }, { rootMargin: '-40% 0px -55% 0px', threshold: 0 });
+    el.querySelectorAll('.stats-section').forEach(sec => sectionObserver.observe(sec));
+  }
 
   return el;
 }

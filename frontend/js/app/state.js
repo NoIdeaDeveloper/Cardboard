@@ -10,6 +10,7 @@
 const COLLECTION_PREFS_KEY = 'cardboard_collection_prefs';
 const COLLECTION_PREFS_DEFAULTS = {
   sortBy: 'name', sortDir: 'asc', viewMode: 'grid', statusFilter: 'owned',
+  gridDensity: 'large',
   search: '',
   filterNeverPlayed: false,
   filterPlayers: null,
@@ -42,6 +43,7 @@ export const state = {
   players: [],        // known player names for autocomplete
   playerObjects: [],  // full player objects (id, name, avatar_url, …)
   viewMode: _cp.viewMode,
+  gridDensity: _cp.gridDensity || 'large',
   sortBy: _cp.sortBy,
   sortDir: _cp.sortDir,
   search: _cp.search,
@@ -60,7 +62,8 @@ export const state = {
 export function saveCollectionPrefs() {
   saveJsonToStorage(COLLECTION_PREFS_KEY, {
     sortBy: state.sortBy, sortDir: state.sortDir,
-    viewMode: state.viewMode, statusFilter: state.statusFilter,
+    viewMode: state.viewMode, gridDensity: state.gridDensity,
+    statusFilter: state.statusFilter,
     search: state.search,
     filterNeverPlayed: state.filterNeverPlayed,
     filterPlayers: state.filterPlayers,

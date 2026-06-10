@@ -517,6 +517,11 @@ if ('serviceWorker' in navigator) {
     document.querySelectorAll('[data-view]').forEach(btn => {
       btn.addEventListener('click', () => {
         const targetView = btn.dataset.view;
+        // "More" button opens mobile menu
+        if (targetView === 'more') {
+          _toggleMobileMoreMenu();
+          return;
+        }
         const targetViewEl = document.getElementById(`view-${targetView}`);
         
         // If already on the target view, smooth scroll to top
@@ -554,6 +559,39 @@ if ('serviceWorker' in navigator) {
     if (bottomStatsBtn) {
       bottomStatsBtn.addEventListener('mouseenter', _prefetchStats, { once: false });
     }
+  }
+
+  function _toggleMobileMoreMenu() {
+    let menu = document.getElementById('mobile-more-menu');
+    if (!menu) {
+      menu = document.createElement('div');
+      menu.id = 'mobile-more-menu';
+      menu.className = 'mobile-more-menu';
+      menu.innerHTML = `
+        <button class="mobile-more-item" data-view="players">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          <span>Players</span>
+        </button>
+        <button class="mobile-more-item" data-view="share">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+          <span>Share</span>
+        </button>
+      `;
+      menu.querySelectorAll('[data-view]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          switchView(btn.dataset.view);
+          menu.classList.remove('open');
+        });
+      });
+      document.body.appendChild(menu);
+      // Close on outside click
+      document.addEventListener('click', (e) => {
+        if (!menu.contains(e.target) && !e.target.closest('[data-view="more"]')) {
+          menu.classList.remove('open');
+        }
+      }, { once: true });
+    }
+    menu.classList.toggle('open');
   }
 
   function switchView(view) {
@@ -762,6 +800,46 @@ if ('serviceWorker' in navigator) {
       syncUrlParams();
       renderCollection();
     });
+
+    // Density toggle (grid only)
+    const densityToggle = document.getElementById('density-toggle');
+    const densityBtns = {
+      large: document.getElementById('density-large'),
+      compact: document.getElementById('density-compact'),
+      covers: document.getElementById('density-covers'),
+    };
+    if (densityToggle && densityBtns.large) {
+      function _setDensity(density) {
+        state.gridDensity = density;
+        Object.entries(densityBtns).forEach(([key, btn]) => {
+          if (btn) btn.classList.toggle('active', key === density);
+        });
+        const container = document.getElementById('games-container');
+        if (container) {
+          container.classList.remove('density-compact', 'density-covers');
+          if (density !== 'large') container.classList.add(`density-${density}`);
+        }
+        saveCollectionPrefs();
+      }
+      Object.entries(densityBtns).forEach(([key, btn]) => {
+        if (btn) btn.addEventListener('click', () => _setDensity(key));
+      });
+      // Show/hide density toggle based on view mode
+      function _syncDensityToggle() {
+        densityToggle.style.display = state.viewMode === 'grid' ? 'flex' : 'none';
+      }
+      gridBtn.addEventListener('click', _syncDensityToggle);
+      listBtn.addEventListener('click', _syncDensityToggle);
+      _syncDensityToggle();
+      // Apply saved density
+      if (state.gridDensity && state.gridDensity !== 'large') {
+        const container = document.getElementById('games-container');
+        if (container) container.classList.add(`density-${state.gridDensity}`);
+        Object.entries(densityBtns).forEach(([key, btn]) => {
+          if (btn) btn.classList.toggle('active', key === state.gridDensity);
+        });
+      }
+    }
 
     const expansionsBtn = document.getElementById('show-expansions-btn');
     if (expansionsBtn) {
@@ -1244,6 +1322,7 @@ if ('serviceWorker' in navigator) {
   function syncFilterActiveBar() {
     const bar = document.getElementById('filter-active-bar');
     const label = document.getElementById('filter-active-label');
+    const chipsEl = document.getElementById('filter-chips');
     const toggleBtn = document.getElementById('filter-toggle-btn');
     const badge = document.getElementById('filter-badge');
     const summaryEl = document.getElementById('filter-summary');
@@ -1280,8 +1359,67 @@ if ('serviceWorker' in navigator) {
 
     if (!hasFilters || panelOpen) {
       bar.style.display = 'none';
+      if (chipsEl) chipsEl.innerHTML = '';
       return;
     }
+
+    // Build removable filter chips
+    if (chipsEl) {
+      const chips = [];
+      if (state.filterNeverPlayed) {
+        chips.push({ type: 'neverPlayed', label: 'Never Played' });
+      }
+      if (state.filterPlayers !== null) {
+        chips.push({ type: 'players', label: `${state.filterPlayers} players`, value: state.filterPlayers });
+      }
+      if (state.filterTime !== null) {
+        chips.push({ type: 'time', label: `≤ ${state.filterTime} min`, value: state.filterTime });
+      }
+      state.filterMechanics.forEach(m => {
+        chips.push({ type: 'mechanic', label: m, value: m });
+      });
+      state.filterCategories.forEach(c => {
+        chips.push({ type: 'category', label: c, value: c });
+      });
+      if (state.filterLocation !== null) {
+        chips.push({ type: 'location', label: _locationLabel(state.filterLocation), value: state.filterLocation });
+      }
+      chipsEl.innerHTML = chips.map(chip => `
+        <span class="filter-chip" data-type="${chip.type}" data-value="${chip.value || ''}">
+          ${escapeHtml(chip.label)}
+          <button class="chip-remove" aria-label="Remove ${escapeHtml(chip.label)} filter" title="Remove filter">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="10" height="10"><path d="M18 6L6 18M6 6l12 12"/></svg>
+          </button>
+        </span>
+      `).join('');
+      chipsEl.querySelectorAll('.chip-remove').forEach(btn => {
+        btn.addEventListener('click', e => {
+          e.stopPropagation();
+          const chip = btn.closest('.filter-chip');
+          const type = chip.dataset.type;
+          const value = chip.dataset.value;
+          switch (type) {
+            case 'neverPlayed': state.filterNeverPlayed = false; break;
+            case 'players': state.filterPlayers = null; break;
+            case 'time': state.filterTime = null; break;
+            case 'mechanic': state.filterMechanics = state.filterMechanics.filter(m => m !== value); break;
+            case 'category': state.filterCategories = state.filterCategories.filter(c => c !== value); break;
+            case 'location': state.filterLocation = null; break;
+          }
+          saveCollectionPrefs();
+          syncUrlParams();
+          loadCollection();
+          // Update filter panel UI
+          const neverBtn = document.getElementById('filter-never-played');
+          const playersEl = document.getElementById('filter-players');
+          const timeEl = document.getElementById('filter-time');
+          if (neverBtn) neverBtn.classList.toggle('active', state.filterNeverPlayed);
+          if (playersEl) playersEl.value = state.filterPlayers ?? '';
+          if (timeEl) timeEl.value = state.filterTime ?? '';
+        });
+      });
+    }
+
     const parts = [];
     if (state.filterNeverPlayed) parts.push('Never Played');
     if (state.filterPlayers !== null) parts.push(`${state.filterPlayers} players`);
@@ -1518,6 +1656,9 @@ if ('serviceWorker' in navigator) {
     }
 
     container.className = state.viewMode === 'grid' ? 'games-grid' : 'games-list';
+    if (state.viewMode === 'grid' && state.gridDensity && state.gridDensity !== 'large') {
+      container.classList.add(`density-${state.gridDensity}`);
+    }
 
     // Build a single card element for a game
     function _buildCard(game) {
@@ -1717,6 +1858,18 @@ if ('serviceWorker' in navigator) {
 
     activeModal = { game, mode: effectiveMode };
     openModal(contentEl);
+
+    // Initialize chip inputs for edit mode
+    if (effectiveMode === 'edit') {
+      requestAnimationFrame(() => {
+        _renderChipInput('edit-categories', JSON.parse(game.categories || '[]'), 'Category', 'dl-categories');
+        _renderChipInput('edit-mechanics',  JSON.parse(game.mechanics  || '[]'), 'Mechanic', 'dl-mechanics');
+        _renderChipInput('edit-designers',  JSON.parse(game.designers  || '[]'), 'Designer', 'dl-designers');
+        _renderChipInput('edit-publishers', JSON.parse(game.publishers || '[]'), 'Publisher', 'dl-publishers');
+        _renderChipInput('edit-labels',     JSON.parse(game.labels     || '[]'), 'Label', 'dl-labels');
+      });
+    }
+
     if (isLogMode) {
       requestAnimationFrame(() => {
         const sessionForm = document.getElementById('log-session-form');
@@ -3198,16 +3351,20 @@ if ('serviceWorker' in navigator) {
           const items = await API.bggSearch(q);
           if (!items.length) { results.innerHTML = `<div class="secondary-empty" style="padding:16px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg><span class="secondary-empty-text">No results on BoardGameGeek</span></div>`; return; }
           results.innerHTML = items.map(item => `
-            <button type="button" class="bgg-search-result" data-bgg-id="${item.bgg_id}">
-              ${item.thumbnail ? `<span class="bgg-result-thumb"><img src="${escapeHtml(item.thumbnail)}" alt="" loading="lazy" width="40" height="40"></span>` : '<span class="bgg-result-thumb bgg-result-thumb-empty"></span>'}
-              <span class="bgg-result-name">${escapeHtml(item.name)}</span>
-              ${item.year_published ? `<span class="bgg-result-year">${item.year_published}</span>` : ''}
-            </button>`).join('');
-          results.querySelectorAll('.bgg-search-result').forEach(btn => {
-            btn.addEventListener('click', async () => {
+            <div class="bgg-search-result" data-bgg-id="${item.bgg_id}">
+              <button type="button" class="bgg-result-main">
+                ${item.thumbnail ? `<span class="bgg-result-thumb"><img src="${escapeHtml(item.thumbnail)}" alt="" loading="lazy" width="40" height="40"></span>` : '<span class="bgg-result-thumb bgg-result-thumb-empty"></span>'}
+                <span class="bgg-result-name">${escapeHtml(item.name)}</span>
+                ${item.year_published ? `<span class="bgg-result-year">${item.year_published}</span>` : ''}
+              </button>
+              <button type="button" class="bgg-result-instant" title="Instant add">+</button>
+            </div>`).join('');
+          results.querySelectorAll('.bgg-search-result').forEach(row => {
+            const bggId = parseInt(row.dataset.bggId, 10);
+            // Main button: pre-fill form
+            row.querySelector('.bgg-result-main').addEventListener('click', async () => {
               results.style.display = 'none';
               input.value = '';
-              const bggId = parseInt(btn.dataset.bggId, 10);
               showToast('Fetching from BGG…', 'info', 2000);
               try {
                 const data = await API.bggFetch(bggId);
@@ -3215,6 +3372,44 @@ if ('serviceWorker' in navigator) {
                 showToast(`Filled in: ${escapeHtml(data.name)}`, 'success');
               } catch (err) {
                 showToast('BGG fetch failed: ' + classifyError(err), 'error');
+              }
+            });
+            // Instant add: create immediately
+            row.querySelector('.bgg-result-instant').addEventListener('click', async () => {
+              results.style.display = 'none';
+              input.value = '';
+              showToast('Creating game from BGG…', 'info', 2000);
+              try {
+                const data = await API.bggFetch(bggId);
+                const payload = {
+                  name: data.name,
+                  status: 'owned',
+                  year_published: data.year_published || null,
+                  min_players: data.min_players || null,
+                  max_players: data.max_players || null,
+                  min_playtime: data.min_playtime || null,
+                  max_playtime: data.max_playtime || null,
+                  difficulty: data.difficulty || null,
+                  bgg_id: data.bgg_id || null,
+                  bgg_rating: data.bgg_rating || null,
+                  image_url: data.image_url || null,
+                  description: data.description || null,
+                  categories: data.categories?.length ? JSON.stringify(data.categories) : null,
+                  mechanics: data.mechanics?.length ? JSON.stringify(data.mechanics) : null,
+                  designers: data.designers?.length ? JSON.stringify(data.designers) : null,
+                  publishers: data.publishers?.length ? JSON.stringify(data.publishers) : null,
+                };
+                const resp = await API.createGame(payload);
+                if (resp.image_url) {
+                  API.cacheGameImage(resp.id);
+                }
+                invalidateCollectionEtag();
+                await loadCollection();
+                showToast(`Added: ${escapeHtml(data.name)}`, 'success');
+                // Switch to collection view
+                switchView('collection');
+              } catch (err) {
+                showToast('Instant add failed: ' + classifyError(err), 'error');
               }
             });
           });
@@ -3237,13 +3432,23 @@ if ('serviceWorker' in navigator) {
     if (data.max_players)   f('m-max-players').value = data.max_players;
     if (data.min_playtime)  f('m-min-playtime').value = data.min_playtime;
     if (data.max_playtime)  f('m-max-playtime').value = data.max_playtime;
-    if (data.difficulty)    f('m-difficulty').value = data.difficulty;
+    if (data.difficulty) {
+      const diffVal = Math.round(parseFloat(data.difficulty));
+      const diffBtn = document.querySelector(`#m-difficulty .segment[data-value="${diffVal}"]`);
+      if (diffBtn) {
+        document.querySelectorAll('#m-difficulty .segment').forEach(b => b.classList.remove('active'));
+        diffBtn.classList.add('active');
+        document.getElementById('m-difficulty-value').value = diffVal;
+      }
+    }
     if (data.description)   f('m-description').value = data.description;
     if (data.image_url)     { f('m-image-url').value = data.image_url; f('m-image-url').dispatchEvent(new Event('input')); }
-    if (data.categories)    f('m-categories').value = (JSON.parse(data.categories || '[]')).join(', ');
-    if (data.mechanics)     f('m-mechanics').value = (JSON.parse(data.mechanics || '[]')).join(', ');
-    if (data.designers)     f('m-designers').value = (JSON.parse(data.designers || '[]')).join(', ');
-    if (data.publishers)    f('m-publishers').value = (JSON.parse(data.publishers || '[]')).join(', ');
+    // Chip inputs
+    if (data.labels)        _renderChipInput('m-labels', JSON.parse(data.labels || '[]'), 'Favourite, Solo, Kid-friendly', 'dl-labels');
+    if (data.categories)    _renderChipInput('m-categories', JSON.parse(data.categories || '[]'), 'Strategy, Card Game', 'dl-categories');
+    if (data.mechanics)     _renderChipInput('m-mechanics', JSON.parse(data.mechanics || '[]'), 'Hand Management, Set Collection', 'dl-mechanics');
+    if (data.designers)     _renderChipInput('m-designers', JSON.parse(data.designers || '[]'), 'Alan Moon', 'dl-designers');
+    if (data.publishers)    _renderChipInput('m-publishers', JSON.parse(data.publishers || '[]'), 'Days of Wonder', 'dl-publishers');
     if (data.bgg_id)        { const bggEl = f('m-bgg-id'); if (bggEl) bggEl.value = data.bgg_id; }
   }
 
@@ -3372,17 +3577,18 @@ if ('serviceWorker' in navigator) {
         }
       });
     });
-    f('m-difficulty').addEventListener('input', () => {
-      const el = f('m-difficulty');
-      const diff = parseFloat(el.value);
-      if (el.value && (diff < 1 || diff > 5)) {
-        setFieldError(e('difficulty'), el, 'Must be between 1 and 5');
-        el.classList.remove('valid');
-      } else {
-        clearFieldError(e('difficulty'), el);
-        if (el.value) el.classList.add('valid');
-      }
-    });
+    // Segmented control for difficulty
+    const difficultyControl = document.getElementById('m-difficulty');
+    const difficultyValue = document.getElementById('m-difficulty-value');
+    if (difficultyControl) {
+      difficultyControl.querySelectorAll('.segment').forEach(btn => {
+        btn.addEventListener('click', () => {
+          difficultyControl.querySelectorAll('.segment').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          difficultyValue.value = btn.dataset.value;
+        });
+      });
+    }
 
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -3412,11 +3618,11 @@ if ('serviceWorker' in navigator) {
         // If a file is selected, skip the URL — image will be uploaded after creation
         image_url:         file ? null : (fd.get('image_url') || null),
         description:       fd.get('description') || null,
-        categories:        csvToJson('categories_raw'),
-        mechanics:         csvToJson('mechanics_raw'),
-        designers:         csvToJson('designers_raw'),
-        publishers:        csvToJson('publishers_raw'),
-        labels:            csvToJson('labels_raw'),
+        categories:        _getChipTags('m-categories'),
+        mechanics:         _getChipTags('m-mechanics'),
+        designers:         _getChipTags('m-designers'),
+        publishers:        _getChipTags('m-publishers'),
+        labels:            _getChipTags('m-labels'),
         purchase_date:     fd.get('purchase_date') || null,
         purchase_price:    Number.isFinite(purchasePriceParsed) ? purchasePriceParsed : null,
         purchase_location: fd.get('purchase_location') || null,
@@ -3572,6 +3778,15 @@ if ('serviceWorker' in navigator) {
 
     // Initialize
     showStep(0, true);
+
+    // Sticky submit bar triggers form submit
+    const stickyBarBtn = document.getElementById('form-submit-btn-sticky');
+    if (stickyBarBtn) {
+      stickyBarBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        form.requestSubmit();
+      });
+    }
   }
 
   // ===== Status Pills =====
@@ -4658,9 +4873,19 @@ if ('serviceWorker' in navigator) {
       }
 
       const row = e.target.closest('.insight-game-row[data-game-id], .most-played-item[data-game-id], .recent-session-item[data-game-id], .insight-nudge[data-game-id]');
-      if (!row) return;
-      const game = allGames.find(g => g.id === parseInt(row.dataset.gameId, 10)) ?? state.games.find(g => g.id === parseInt(row.dataset.gameId, 10));
-      if (game) openGameModal(game);
+      if (row) {
+        const game = allGames.find(g => g.id === parseInt(row.dataset.gameId, 10)) ?? state.games.find(g => g.id === parseInt(row.dataset.gameId, 10));
+        if (game) openGameModal(game);
+        return;
+      }
+      // Wishlist insight nudge drilldown
+      const wishlistNudge = e.target.closest('.insight-nudge[data-drilldown="wishlist"]');
+      if (wishlistNudge) {
+        state.statusFilter = 'wishlist';
+        syncCollectionUI();
+        switchView('collection');
+        return;
+      }
     });
 
     // If the user came here via the empty-state "Import from BGG" button, open the
@@ -4725,6 +4950,50 @@ if ('serviceWorker' in navigator) {
     }
   }
 
+  function _loadPrevStats() {
+    try {
+      const raw = localStorage.getItem('cardboard_prev_stats');
+      if (!raw) return null;
+      const data = JSON.parse(raw);
+      // Only use if less than 7 days old
+      if (Date.now() - data._storedAt > 7 * 86400000) return null;
+      return data.stats;
+    } catch (_) { return null; }
+  }
+  function _savePrevStats(stats) {
+    try {
+      localStorage.setItem('cardboard_prev_stats', JSON.stringify({ stats, _storedAt: Date.now() }));
+    } catch (_) { /* storage full */ }
+  }
+  function _computeStatDeltas(curr, prev) {
+    const d = {};
+    // Total games
+    const cGames = curr.total_games || 0;
+    const pGames = prev.total_games || 0;
+    if (cGames !== pGames) d.total_games = cGames - pGames;
+    // Owned
+    const cOwned = (curr.by_status && curr.by_status.owned) || 0;
+    const pOwned = (prev.by_status && prev.by_status.owned) || 0;
+    if (cOwned !== pOwned) d.owned = cOwned - pOwned;
+    // Wishlist
+    const cWish = (curr.by_status && curr.by_status.wishlist) || 0;
+    const pWish = (prev.by_status && prev.by_status.wishlist) || 0;
+    if (cWish !== pWish) d.wishlist = cWish - pWish;
+    // Sessions
+    const cSess = curr.total_sessions || 0;
+    const pSess = prev.total_sessions || 0;
+    if (cSess !== pSess) d.total_sessions = cSess - pSess;
+    // Hours
+    const cHours = curr.total_hours || 0;
+    const pHours = prev.total_hours || 0;
+    if (Math.abs(cHours - pHours) >= 0.1) d.total_hours = +(cHours - pHours).toFixed(1);
+    // Never played
+    const cNever = curr.never_played_count || 0;
+    const pNever = prev.never_played_count || 0;
+    if (cNever !== pNever) d.never_played = cNever - pNever;
+    return Object.keys(d).length ? d : null;
+  }
+
   async function loadStats() {
     _statsLoading = true;
     const el = document.getElementById('stats-content');
@@ -4751,13 +5020,16 @@ if ('serviceWorker' in navigator) {
         API.checkGoals().then(() => API.getGoals()).catch(() => []),
       ]);
       const prefs = loadStatsPrefs();
+      const prevStats = _loadPrevStats();
+      const deltas = prevStats ? _computeStatDeltas(stats, prevStats) : null;
       el.innerHTML = '';
-      const statsView = buildStatsView(stats, [], prefs, saveStatsPrefs, goals);
+      const statsView = buildStatsView(stats, [], prefs, saveStatsPrefs, goals, deltas);
       el.appendChild(statsView);
       wireStatsView(statsView, stats);
       wireGoalsSection(statsView, { reloadStats: loadStats });
       _injectMilestonesIntoGrid(statsView, prefs);
       _animateStatBars(el);
+      _savePrevStats(stats);
     } catch (err) {
       el.innerHTML = `<div class="loading-spinner">
         <p style="color:var(--danger);margin-bottom:0.75rem">Failed to load stats: ${escapeHtml(classifyError(err))}</p>
@@ -4787,9 +5059,11 @@ if ('serviceWorker' in navigator) {
         API.checkGoals().then(() => API.getGoals()).catch(() => []),
       ]);
       const prefs = loadStatsPrefs();
+      const prevStats = _loadPrevStats();
+      const deltas = prevStats ? _computeStatDeltas(stats, prevStats) : null;
       const el = document.getElementById('stats-content');
       el.innerHTML = '';
-      const statsView = buildStatsView(stats, [], prefs, saveStatsPrefs, goals);
+      const statsView = buildStatsView(stats, [], prefs, saveStatsPrefs, goals, deltas);
       el.appendChild(statsView);
       wireStatsView(statsView, stats);
       wireGoalsSection(statsView, { reloadStats: loadStats });
