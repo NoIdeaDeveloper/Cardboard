@@ -803,7 +803,7 @@ def get_stats(request: Request, db: Session = Depends(get_db)):
         dimes=dimes,
         nickels=nickels,
         quarters=quarters,
-    ).model_dump())
+    ).model_dump(mode="json"))
     resp.headers["ETag"] = etag
     resp.headers["Cache-Control"] = "private, no-cache"
     return resp
