@@ -428,7 +428,7 @@ if ('serviceWorker' in navigator) {
     bindFilters();
     bindAddGame();
     bindBggSearch();
-    wireTagInputs();
+    initAddFormChipInputs();
     bindModalBackdrop();
     bindKeyboardShortcuts();
     bindShortcutsOverlay();
@@ -517,11 +517,6 @@ if ('serviceWorker' in navigator) {
     document.querySelectorAll('[data-view]').forEach(btn => {
       btn.addEventListener('click', () => {
         const targetView = btn.dataset.view;
-        // "More" button opens mobile menu
-        if (targetView === 'more') {
-          _toggleMobileMoreMenu();
-          return;
-        }
         const targetViewEl = document.getElementById(`view-${targetView}`);
         
         // If already on the target view, smooth scroll to top
@@ -559,39 +554,17 @@ if ('serviceWorker' in navigator) {
     if (bottomStatsBtn) {
       bottomStatsBtn.addEventListener('mouseenter', _prefetchStats, { once: false });
     }
-  }
 
-  function _toggleMobileMoreMenu() {
-    let menu = document.getElementById('mobile-more-menu');
-    if (!menu) {
-      menu = document.createElement('div');
-      menu.id = 'mobile-more-menu';
-      menu.className = 'mobile-more-menu';
-      menu.innerHTML = `
-        <button class="mobile-more-item" data-view="players">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-          <span>Players</span>
-        </button>
-        <button class="mobile-more-item" data-view="share">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
-          <span>Share</span>
-        </button>
-      `;
-      menu.querySelectorAll('[data-view]').forEach(btn => {
-        btn.addEventListener('click', () => {
-          switchView(btn.dataset.view);
-          menu.classList.remove('open');
-        });
-      });
-      document.body.appendChild(menu);
-      // Close on outside click
+    // Mobile "More" menu (markup in index.html; items use the generic [data-view] wiring above)
+    const moreBtn = document.getElementById('bottom-nav-more');
+    const moreMenu = document.getElementById('mobile-more-menu');
+    if (moreBtn && moreMenu) {
+      moreBtn.addEventListener('click', () => moreMenu.classList.toggle('open'));
+      // Any click inside the menu (item chosen) or outside it closes the menu
       document.addEventListener('click', (e) => {
-        if (!menu.contains(e.target) && !e.target.closest('[data-view="more"]')) {
-          menu.classList.remove('open');
-        }
-      }, { once: true });
+        if (!e.target.closest('#bottom-nav-more')) moreMenu.classList.remove('open');
+      });
     }
-    menu.classList.toggle('open');
   }
 
   function switchView(view) {
@@ -832,13 +805,7 @@ if ('serviceWorker' in navigator) {
       listBtn.addEventListener('click', _syncDensityToggle);
       _syncDensityToggle();
       // Apply saved density
-      if (state.gridDensity && state.gridDensity !== 'large') {
-        const container = document.getElementById('games-container');
-        if (container) container.classList.add(`density-${state.gridDensity}`);
-        Object.entries(densityBtns).forEach(([key, btn]) => {
-          if (btn) btn.classList.toggle('active', key === state.gridDensity);
-        });
-      }
+      _setDensity(state.gridDensity || 'large');
     }
 
     const expansionsBtn = document.getElementById('show-expansions-btn');
@@ -896,27 +863,17 @@ if ('serviceWorker' in navigator) {
     }
   }
 
-  function wireTagInputs() {
-    TAG_FIELDS.forEach(field => {
-      const input = document.getElementById(`m-${field}`);
-      if (!input || input.dataset.tagWired) return;
-      input.dataset.tagWired = '1';
-      input.addEventListener('input', function () {
-        const dl = document.getElementById(this.getAttribute('list'));
-        if (!dl) return;
-        const options = new Set([...dl.options].map(o => o.value));
-        const val = this.value;
-        if (options.has(val)) {
-          // Datalist replaced the entire field — prepend stored prefix
-          const pfx = this.dataset.tagPrefix || '';
-          this.value = pfx ? pfx + val : val;
-          return;
-        }
-        // Normal typing — refresh prefix (everything up to and including last comma)
-        const commaIdx = val.lastIndexOf(',');
-        this.dataset.tagPrefix = commaIdx !== -1 ? val.slice(0, commaIdx + 1) + ' ' : '';
-      });
-    });
+  const TAG_PLACEHOLDERS = {
+    labels: 'Favourite, Solo, Kid-friendly',
+    categories: 'Strategy, Card Game',
+    mechanics: 'Hand Management, Set Collection',
+    designers: 'Alan Moon',
+    publishers: 'Days of Wonder',
+  };
+
+  // Build empty chip inputs on the add form (prefillFormFromBgg re-initializes them with values)
+  function initAddFormChipInputs() {
+    TAG_FIELDS.forEach(field => _renderChipInput(`m-${field}`, [], TAG_PLACEHOLDERS[field], `dl-${field}`));
   }
 
   // ===== Sort ===== (sortGames is imported from app/sort.js)
@@ -1392,8 +1349,11 @@ if ('serviceWorker' in navigator) {
           </button>
         </span>
       `).join('');
-      chipsEl.querySelectorAll('.chip-remove').forEach(btn => {
-        btn.addEventListener('click', e => {
+      if (!chipsEl.dataset.wired) {
+        chipsEl.dataset.wired = '1';
+        chipsEl.addEventListener('click', e => {
+          const btn = e.target.closest('.chip-remove');
+          if (!btn) return;
           e.stopPropagation();
           const chip = btn.closest('.filter-chip');
           const type = chip.dataset.type;
@@ -1409,15 +1369,9 @@ if ('serviceWorker' in navigator) {
           saveCollectionPrefs();
           syncUrlParams();
           loadCollection();
-          // Update filter panel UI
-          const neverBtn = document.getElementById('filter-never-played');
-          const playersEl = document.getElementById('filter-players');
-          const timeEl = document.getElementById('filter-time');
-          if (neverBtn) neverBtn.classList.toggle('active', state.filterNeverPlayed);
-          if (playersEl) playersEl.value = state.filterPlayers ?? '';
-          if (timeEl) timeEl.value = state.filterTime ?? '';
+          syncCollectionUI();
         });
-      });
+      }
     }
 
     const parts = [];
@@ -3597,12 +3551,6 @@ if ('serviceWorker' in navigator) {
       const fd   = new FormData(form);
       const file = fileInput.files[0];
 
-      function csvToJson(key) {
-        const val = fd.get(key) || '';
-        const items = val.split(',').map(s => s.trim()).filter(Boolean);
-        return items.length ? JSON.stringify(items) : null;
-      }
-
       const purchasePriceRaw = fd.get('purchase_price');
       const purchasePriceParsed = parseFloat(purchasePriceRaw);
       const payload = {
@@ -3700,6 +3648,7 @@ if ('serviceWorker' in navigator) {
           showToast(`"${payload.name}" added to collection!`, 'success');
           launchConfetti();
           form.reset();
+          initAddFormChipInputs();
           form.querySelectorAll('.valid').forEach(el => el.classList.remove('valid'));
           if (_addGamePreviewBlobUrl) { URL.revokeObjectURL(_addGamePreviewBlobUrl); _addGamePreviewBlobUrl = null; }
           setPreview(null);
@@ -3778,15 +3727,6 @@ if ('serviceWorker' in navigator) {
 
     // Initialize
     showStep(0, true);
-
-    // Sticky submit bar triggers form submit
-    const stickyBarBtn = document.getElementById('form-submit-btn-sticky');
-    if (stickyBarBtn) {
-      stickyBarBtn.addEventListener('click', (e) => {
-        e.preventDefault();
-        form.requestSubmit();
-      });
-    }
   }
 
   // ===== Status Pills =====
@@ -4941,8 +4881,7 @@ if ('serviceWorker' in navigator) {
         API.getStats(),
         API.checkGoals().then(() => API.getGoals()).catch(() => []),
       ]);
-      const prefs = loadStatsPrefs();
-      _statsPrefetched = { stats, goals, prefs };
+      _statsPrefetched = { stats, goals };
     } catch (_) {
       _statsPrefetched = null;
     } finally {
@@ -4950,48 +4889,50 @@ if ('serviceWorker' in navigator) {
     }
   }
 
+  const PREV_STATS_KEY = 'cardboard_prev_stats';
   function _loadPrevStats() {
-    try {
-      const raw = localStorage.getItem('cardboard_prev_stats');
-      if (!raw) return null;
-      const data = JSON.parse(raw);
-      // Only use if less than 7 days old
-      if (Date.now() - data._storedAt > 7 * 86400000) return null;
-      return data.stats;
-    } catch (_) { return null; }
+    const data = loadJsonFromStorage(PREV_STATS_KEY, null);
+    // Only use if less than 7 days old
+    if (!data || Date.now() - data._storedAt > 7 * 86400000) return null;
+    return data.stats;
   }
   function _savePrevStats(stats) {
-    try {
-      localStorage.setItem('cardboard_prev_stats', JSON.stringify({ stats, _storedAt: Date.now() }));
-    } catch (_) { /* storage full */ }
+    saveJsonToStorage(PREV_STATS_KEY, { stats, _storedAt: Date.now() });
   }
+  const STAT_DELTA_METRICS = {
+    total_games:    s => s.total_games || 0,
+    owned:          s => s.by_status?.owned || 0,
+    wishlist:       s => s.by_status?.wishlist || 0,
+    total_sessions: s => s.total_sessions || 0,
+    total_hours:    s => s.total_hours || 0,
+    never_played:   s => s.never_played_count || 0,
+  };
   function _computeStatDeltas(curr, prev) {
     const d = {};
-    // Total games
-    const cGames = curr.total_games || 0;
-    const pGames = prev.total_games || 0;
-    if (cGames !== pGames) d.total_games = cGames - pGames;
-    // Owned
-    const cOwned = (curr.by_status && curr.by_status.owned) || 0;
-    const pOwned = (prev.by_status && prev.by_status.owned) || 0;
-    if (cOwned !== pOwned) d.owned = cOwned - pOwned;
-    // Wishlist
-    const cWish = (curr.by_status && curr.by_status.wishlist) || 0;
-    const pWish = (prev.by_status && prev.by_status.wishlist) || 0;
-    if (cWish !== pWish) d.wishlist = cWish - pWish;
-    // Sessions
-    const cSess = curr.total_sessions || 0;
-    const pSess = prev.total_sessions || 0;
-    if (cSess !== pSess) d.total_sessions = cSess - pSess;
-    // Hours
-    const cHours = curr.total_hours || 0;
-    const pHours = prev.total_hours || 0;
-    if (Math.abs(cHours - pHours) >= 0.1) d.total_hours = +(cHours - pHours).toFixed(1);
-    // Never played
-    const cNever = curr.never_played_count || 0;
-    const pNever = prev.never_played_count || 0;
-    if (cNever !== pNever) d.never_played = cNever - pNever;
+    for (const [key, get] of Object.entries(STAT_DELTA_METRICS)) {
+      const diff = get(curr) - get(prev);
+      if (key === 'total_hours') {
+        if (Math.abs(diff) >= 0.1) d[key] = +diff.toFixed(1);
+      } else if (diff !== 0) {
+        d[key] = diff;
+      }
+    }
     return Object.keys(d).length ? d : null;
+  }
+
+  // Render + wire the stats view into #stats-content (shared by all stats paths)
+  function _renderStatsView(stats, goals) {
+    const prefs = loadStatsPrefs();
+    const prevStats = _loadPrevStats();
+    const deltas = prevStats ? _computeStatDeltas(stats, prevStats) : null;
+    const el = document.getElementById('stats-content');
+    el.innerHTML = '';
+    const statsView = buildStatsView(stats, [], prefs, saveStatsPrefs, goals, deltas);
+    el.appendChild(statsView);
+    wireStatsView(statsView, stats);
+    wireGoalsSection(statsView, { reloadStats: loadStats });
+    _injectMilestonesIntoGrid(statsView, prefs);
+    _animateStatBars(el);
   }
 
   async function loadStats() {
@@ -5000,15 +4941,9 @@ if ('serviceWorker' in navigator) {
 
     // Use prefetched data if available
     if (_statsPrefetched) {
-      const { stats, goals, prefs } = _statsPrefetched;
+      const { stats, goals } = _statsPrefetched;
       _statsPrefetched = null;
-      el.innerHTML = '';
-      const statsView = buildStatsView(stats, [], prefs, saveStatsPrefs, goals);
-      el.appendChild(statsView);
-      wireStatsView(statsView, stats);
-      wireGoalsSection(statsView, { reloadStats: loadStats });
-      _injectMilestonesIntoGrid(statsView, prefs);
-      _animateStatBars(el);
+      _renderStatsView(stats, goals);
       _statsLoading = false;
       return;
     }
@@ -5019,16 +4954,7 @@ if ('serviceWorker' in navigator) {
         API.getStats(),
         API.checkGoals().then(() => API.getGoals()).catch(() => []),
       ]);
-      const prefs = loadStatsPrefs();
-      const prevStats = _loadPrevStats();
-      const deltas = prevStats ? _computeStatDeltas(stats, prevStats) : null;
-      el.innerHTML = '';
-      const statsView = buildStatsView(stats, [], prefs, saveStatsPrefs, goals, deltas);
-      el.appendChild(statsView);
-      wireStatsView(statsView, stats);
-      wireGoalsSection(statsView, { reloadStats: loadStats });
-      _injectMilestonesIntoGrid(statsView, prefs);
-      _animateStatBars(el);
+      _renderStatsView(stats, goals);
       _savePrevStats(stats);
     } catch (err) {
       el.innerHTML = `<div class="loading-spinner">
@@ -5058,17 +4984,7 @@ if ('serviceWorker' in navigator) {
         API.getStats(),
         API.checkGoals().then(() => API.getGoals()).catch(() => []),
       ]);
-      const prefs = loadStatsPrefs();
-      const prevStats = _loadPrevStats();
-      const deltas = prevStats ? _computeStatDeltas(stats, prevStats) : null;
-      const el = document.getElementById('stats-content');
-      el.innerHTML = '';
-      const statsView = buildStatsView(stats, [], prefs, saveStatsPrefs, goals, deltas);
-      el.appendChild(statsView);
-      wireStatsView(statsView, stats);
-      wireGoalsSection(statsView, { reloadStats: loadStats });
-      _injectMilestonesIntoGrid(statsView, prefs);
-      _animateStatBars(el);
+      _renderStatsView(stats, goals);
     } catch (_) { /* non-fatal */ }
   }
 

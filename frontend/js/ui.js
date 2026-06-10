@@ -25,23 +25,11 @@ function _renderChipInput(containerId, initialTags, placeholder, datalistId) {
   if (!container) return null;
   container.innerHTML = '';
   container.className = 'chip-input';
-  container.dataset.tags = JSON.stringify(initialTags || []);
 
-  const addTag = (tag) => {
-    const tagStr = tag.trim();
-    if (!tagStr) return;
-    const tags = JSON.parse(container.dataset.tags || '[]');
-    if (!tags.includes(tagStr)) {
-      tags.push(tagStr);
-      container.dataset.tags = JSON.stringify(tags);
-      _renderChip(container, tagStr);
-    }
-  };
-
-  // Render existing tags
-  for (const tag of (initialTags || [])) {
-    _renderChip(container, tag);
-  }
+  // Source of truth; mirrored to dataset.tags so _getChipTags can read it on submit
+  const tags = [...(initialTags || [])];
+  const syncTags = () => { container.dataset.tags = JSON.stringify(tags); };
+  syncTags();
 
   // Input field
   const input = document.createElement('input');
@@ -51,6 +39,39 @@ function _renderChipInput(containerId, initialTags, placeholder, datalistId) {
   input.autocomplete = 'off';
   container.appendChild(input);
 
+  const renderChip = (tag) => {
+    const chip = document.createElement('span');
+    chip.className = 'chip-input-chip';
+    chip.textContent = tag;
+    const removeBtn = document.createElement('button');
+    removeBtn.className = 'chip-remove';
+    removeBtn.innerHTML = '×';
+    removeBtn.setAttribute('aria-label', `Remove ${tag}`);
+    removeBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const idx = tags.indexOf(tag);
+      if (idx > -1) {
+        tags.splice(idx, 1);
+        syncTags();
+      }
+      chip.remove();
+    });
+    chip.appendChild(removeBtn);
+    container.insertBefore(chip, input);
+  };
+
+  const addTag = (tag) => {
+    const tagStr = tag.trim();
+    if (tagStr && !tags.includes(tagStr)) {
+      tags.push(tagStr);
+      syncTags();
+      renderChip(tagStr);
+    }
+  };
+
+  // Render existing tags
+  for (const tag of tags) renderChip(tag);
+
   // Handle comma/enter to add tags
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' || e.key === ',') {
@@ -58,14 +79,11 @@ function _renderChipInput(containerId, initialTags, placeholder, datalistId) {
       addTag(input.value);
       input.value = '';
     }
-    if (e.key === 'Backspace' && !input.value) {
-      const tags = JSON.parse(container.dataset.tags || '[]');
-      if (tags.length) {
-        const removed = tags.pop();
-        container.dataset.tags = JSON.stringify(tags);
-        const chips = container.querySelectorAll('.chip-input-chip');
-        if (chips.length) chips[chips.length - 1].remove();
-      }
+    if (e.key === 'Backspace' && !input.value && tags.length) {
+      tags.pop();
+      syncTags();
+      const chips = container.querySelectorAll('.chip-input-chip');
+      if (chips.length) chips[chips.length - 1].remove();
     }
   });
 
@@ -85,32 +103,12 @@ function _renderChipInput(containerId, initialTags, placeholder, datalistId) {
   return container;
 }
 
-function _renderChip(container, tag) {
-  const chip = document.createElement('span');
-  chip.className = 'chip-input-chip';
-  chip.textContent = tag;
-  const removeBtn = document.createElement('button');
-  removeBtn.className = 'chip-remove';
-  removeBtn.innerHTML = '×';
-  removeBtn.setAttribute('aria-label', `Remove ${tag}`);
-  removeBtn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    const tags = JSON.parse(container.dataset.tags || '[]');
-    const idx = tags.indexOf(tag);
-    if (idx > -1) {
-      tags.splice(idx, 1);
-      container.dataset.tags = JSON.stringify(tags);
-    }
-    chip.remove();
-  });
-  chip.appendChild(removeBtn);
-  container.insertBefore(chip, container.querySelector('input'));
-}
-
+// Returns the tags as a JSON string, or null if empty — the format the API expects
+// (same contract as the csvToJson helper this replaced)
 function _getChipTags(containerId) {
   const container = document.getElementById(containerId);
-  if (!container) return [];
-  return JSON.parse(container.dataset.tags || '[]');
+  const json = container?.dataset.tags;
+  return json && json !== '[]' ? json : null;
 }
 
 // ===== Game Card (Grid) =====
@@ -1697,12 +1695,6 @@ function buildModalContent(game, sessions, onSave, onDelete, onAddSession, onDel
       });
     }
 
-    // Save
-    function csvToJson(val) {
-      const items = (val || '').split(',').map(s => s.trim()).filter(Boolean);
-      return items.length ? JSON.stringify(items) : null;
-    }
-
     // Inline validation helpers
     function _fieldError(id, msg) {
       const span = el.querySelector(`#${id}`);
@@ -2500,13 +2492,13 @@ function buildStatsView(stats, games, prefs = {}, onPrefsChange = null, goals = 
   const _maxWeekStreak = stats.best_weekly_streak || 0;
 
   const statDefs = [
-    { label: 'Total Games',   value: totalGamesLabel, raw: true },
-    { label: 'Owned',         value: stats.by_status.owned    || 0, drilldown: 'owned' },
-    { label: 'Wishlist',      value: stats.by_status.wishlist || 0, drilldown: 'wishlist' },
-    { label: 'Play Sessions', value: stats.total_sessions },
-    { label: 'Hours Played',  value: stats.total_hours },
+    { label: 'Total Games',   value: totalGamesLabel, raw: true, deltaKey: 'total_games' },
+    { label: 'Owned',         value: stats.by_status.owned    || 0, drilldown: 'owned', deltaKey: 'owned' },
+    { label: 'Wishlist',      value: stats.by_status.wishlist || 0, drilldown: 'wishlist', deltaKey: 'wishlist' },
+    { label: 'Play Sessions', value: stats.total_sessions, deltaKey: 'total_sessions' },
+    { label: 'Hours Played',  value: stats.total_hours, deltaKey: 'total_hours' },
     ...(stats.avg_rating    != null ? [{ label: 'Avg Rating',        value: stats.avg_rating + ' / 10' }] : []),
-    { label: 'Never Played',  value: stats.never_played_count, drilldown: 'never_played' },
+    { label: 'Never Played',  value: stats.never_played_count, drilldown: 'never_played', deltaKey: 'never_played' },
     ...(avgSessionLen != null ? [{ label: 'Avg Session',       value: avgSessionLen + ' min' }] : []),
     ...(mostActiveMonth && mostActiveMonth.count > 0 ? [{ label: 'Best Month',  value: mostActiveMonth.month }] : []),
     ...(topMechanicName ? [{ label: 'Top Mechanic', value: topMechanicName }] : []),
@@ -2560,18 +2552,8 @@ function buildStatsView(stats, games, prefs = {}, onPrefsChange = null, goals = 
         </div>`).join('')}
     </div>` : '';
 
-  function _deltaHtml(label) {
-    if (!deltas) return '';
-    const keyMap = {
-      'Total Games': 'total_games',
-      'Owned': 'owned',
-      'Wishlist': 'wishlist',
-      'Play Sessions': 'total_sessions',
-      'Hours Played': 'total_hours',
-      'Never Played': 'never_played',
-    };
-    const key = keyMap[label];
-    if (!key || !(key in deltas)) return '';
+  function _deltaHtml(key) {
+    if (!deltas || !key || !(key in deltas)) return '';
     const val = deltas[key];
     const cls = val > 0 ? 'positive' : val < 0 ? 'negative' : 'neutral';
     const arrow = val > 0 ? '↑' : val < 0 ? '↓' : '→';
@@ -2585,7 +2567,7 @@ function buildStatsView(stats, games, prefs = {}, onPrefsChange = null, goals = 
       <div class="stat-card"${c.drilldown ? ` data-drilldown="${c.drilldown}" title="View in collection"` : ''}>
         <div class="stat-card-value">${c.raw ? c.value : escapeHtml(String(c.value))}</div>
         <div class="stat-card-label">${escapeHtml(c.label)}</div>
-        ${_deltaHtml(c.label)}
+        ${_deltaHtml(c.deltaKey)}
       </div>`).join('')}
   </div>`;
 

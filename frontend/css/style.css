@@ -6396,6 +6396,9 @@ img.player-profile-avatar { display: block; }
   }
 }
 
+/* Menu markup lives in index.html; hide it wherever the bottom nav is hidden */
+.mobile-more-menu { display: none; }
+
 @media (max-width: 768px) and (orientation: landscape) {
   .modal-container { max-height: 96vh; }
   .modal-body { padding-left: max(16px, env(safe-area-inset-left)); padding-right: max(16px, env(safe-area-inset-right)); }
