@@ -1445,32 +1445,21 @@ if ('serviceWorker' in navigator) {
       // Handle empty filtered tabs (wishlist, owned, sold with no games) or active filters with no results
       const filtersActive = hasActiveFilters();
 
-      // Auto-navigate to Add view when searching for a game not in collection
-      if (state.search && !filtersActive) {
-        const term = state.search;
-        const searchInput = document.getElementById('collection-search');
-        if (searchInput) searchInput.value = '';
-        state.search = '';
-        const clearBtn = document.getElementById('clear-search');
-        if (clearBtn) clearBtn.style.display = 'none';
-        switchView('add');
-        setTimeout(() => {
-          const nameInput = document.getElementById('m-name');
-          if (nameInput) { nameInput.value = term; nameInput.focus(); }
-        }, 100);
-        return;
-      }
-
       // Build tab-specific empty message
       let emptyMessage = 'No games match your filters.';
+      let addActionHtml = '';
       if (!filtersActive && !state.search) {
         // This is an empty status tab (wishlist, owned, sold)
         const tabLabels = { owned: 'owned', wishlist: 'wishlist', sold: 'sold' };
         const tabName = tabLabels[state.statusFilter] || state.statusFilter;
         emptyMessage = `No ${tabName} games yet.`;
+      } else if (state.search && !filtersActive) {
+        // Search found no results — show inline empty with option to add
+        emptyMessage = `No matches for "${state.search}"`;
+        addActionHtml = `<button class="btn btn-primary btn-sm" id="no-results-add-game">Add "${escapeHtml(state.search)}" as a new game</button>`;
       }
 
-      const actionBtn = filtersActive
+      const clearBtn = filtersActive
         ? `<button class="btn btn-secondary btn-sm" id="no-results-clear-filters">Clear filters</button>`
         : '';
       container.innerHTML = `<div class="empty-search-state">
@@ -1486,10 +1475,23 @@ if ('serviceWorker' in navigator) {
           <rect x="173" y="58" width="20" height="24" rx="2" fill="var(--bg-4)" opacity="0.5"/>
         </svg>
         <p class="empty-search-text">${escapeHtml(emptyMessage)}</p>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center">${actionBtn}</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center">${clearBtn}${addActionHtml}</div>
       </div>`;
       document.getElementById('no-results-clear-filters')?.addEventListener('click', () => {
         document.getElementById('filter-clear-all')?.click();
+      });
+      document.getElementById('no-results-add-game')?.addEventListener('click', () => {
+        const term = state.search;
+        const searchInput = document.getElementById('collection-search');
+        if (searchInput) searchInput.value = '';
+        state.search = '';
+        const clearBtn = document.getElementById('clear-search');
+        if (clearBtn) clearBtn.style.display = 'none';
+        switchView('add');
+        setTimeout(() => {
+          const nameInput = document.getElementById('m-name');
+          if (nameInput) { nameInput.value = term; nameInput.focus(); }
+        }, 100);
       });
     if (currentCollectionDisplayPrefs.show_recently_played !== false) {
       renderRecentlyPlayedShelf();

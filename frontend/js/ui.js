@@ -120,6 +120,7 @@ function buildGameCard(game) {
         ${cardLabelsHtml}
         ${cardLocationHtml}
         ${expansionBadgeHtml}
+        ${game.loaned_to ? `<span class="loan-badge">Loaned to ${escapeHtml(game.loaned_to)}</span>` : ''}
         ${game.date_added ? `<span class="game-date-added">Added ${escapeHtml(formatDatetime(game.date_added))}</span>` : ''}
         ${game.share_hidden ? `<span class="share-hidden-badge">Hidden from share</span>` : ''}
       </div>
@@ -175,6 +176,7 @@ function buildGameListItem(game) {
       ${metaParts.length ? `<div class="list-meta">${metaParts.map(escapeHtml).join(' · ')}</div>` : ''}
       ${listLabelsHtml}
       ${listExpBadge}
+      ${game.loaned_to ? `<span class="loan-badge">Loaned to ${escapeHtml(game.loaned_to)}</span>` : ''}
       ${game.last_played ? `<div class="last-played-line">Played ${escapeHtml(formatDate(game.last_played))}</div>` : ''}
       ${game.date_added ? `<div class="last-played-line">Added ${escapeHtml(formatDatetime(game.date_added))}</div>` : ''}
       ${(game.show_location && game.location) ? `<div class="location-line">${escapeHtml(game.location)}</div>` : ''}
@@ -283,6 +285,16 @@ function buildModalContent(game, sessions, onSave, onDelete, onAddSession, onDel
           ${game.sale_price != null ? `<span class="purchase-field"><span class="purchase-label">Sold For</span> $${game.sale_price.toFixed(2)}</span>` : ''}
           ${game.purchase_location ? `<span class="purchase-field"><span class="purchase-label">From</span> ${escapeHtml(game.purchase_location)}</span>` : ''}
           ${cph ? `<span class="purchase-field purchase-cph"><span class="purchase-label">Cost/hr</span> $${cph}</span>` : ''}
+        </div>
+      </div>`
+    : '';
+
+  const loanDisplayHtml = game.loaned_to
+    ? `<div class="modal-section loan-section">
+        <div class="section-label">Loaned Out</div>
+        <div class="loan-info">
+          <span class="loan-person">${escapeHtml(game.loaned_to)}</span>
+          ${game.loaned_at ? `<span class="loan-date">since ${escapeHtml(formatDate(game.loaned_at))}</span>` : ''}
         </div>
       </div>`
     : '';
@@ -618,6 +630,14 @@ function buildModalContent(game, sessions, onSave, onDelete, onAddSession, onDel
             <input type="text" id="edit-purchase-location" class="form-input" value="${escapeHtml(game.purchase_location || '')}" autocomplete="off" list="edit-purchase-location-list">
             <datalist id="edit-purchase-location-list">${_buildLocationDatalist(allGames, 'purchase_location')}</datalist>
           </div>
+          <div class="form-group">
+            <label for="edit-loaned-to">Loaned To</label>
+            <input type="text" id="edit-loaned-to" class="form-input" placeholder="Friend's name" value="${escapeHtml(game.loaned_to || '')}" autocomplete="off">
+          </div>
+          <div class="form-group">
+            <label for="edit-loaned-at">Loan Date</label>
+            <input type="date" id="edit-loaned-at" class="form-input date-input" value="${game.loaned_at || ''}" autocomplete="off">
+          </div>
           <div class="form-group full-width">
             <label for="edit-location">Storage Location</label>
             <div class="input-with-toggle">
@@ -708,6 +728,7 @@ function buildModalContent(game, sessions, onSave, onDelete, onAddSession, onDel
       ${expansionChipsHtml}
       ${labelsDisplayHtml}
       ${purchaseDisplayHtml}
+      ${loanDisplayHtml}
       ${locationDisplayHtml}
 
       ${ratingWidgetHtml}
@@ -1684,6 +1705,8 @@ function buildModalContent(game, sessions, onSave, onDelete, onAddSession, onDel
         purchase_price:   el.querySelector('#edit-purchase-price').value !== '' ? parseFloat(el.querySelector('#edit-purchase-price').value) : null,
         sale_price:       el.querySelector('#edit-sale-price').value !== '' ? parseFloat(el.querySelector('#edit-sale-price').value) : null,
         purchase_location: el.querySelector('#edit-purchase-location').value.trim() || null,
+        loaned_to:         el.querySelector('#edit-loaned-to')?.value.trim() || null,
+        loaned_at:         el.querySelector('#edit-loaned-at')?.value || null,
         location:           el.querySelector('#edit-location').value.trim() || null,
         show_location:      el.querySelector('#edit-show-location').checked,
         parent_game_id:     parseInt(el.querySelector('#edit-base-game-id').value, 10) || null,
@@ -2387,6 +2410,10 @@ function buildStatsView(stats, games, prefs = {}, onPrefsChange = null, goals = 
     ...(topMechanicName ? [{ label: 'Top Mechanic', value: topMechanicName }] : []),
     ...(_dailyStreak > 1   ? [{ label: 'Daily Streak',  value: pluralize(_dailyStreak, 'day') }] : []),
     ...(_maxWeekStreak > 1 ? [{ label: 'Best Streak',   value: pluralize(_maxWeekStreak, 'week') }] : []),
+    ...(stats.h_index > 0 ? [{ label: 'H-Index', value: stats.h_index }] : []),
+    ...(stats.quarters > 0 ? [{ label: 'Quarters (25+)', value: stats.quarters }] : []),
+    ...(stats.dimes > 0 ? [{ label: 'Dimes (10+)', value: stats.dimes }] : []),
+    ...(stats.nickels > 0 ? [{ label: 'Nickels (5+)', value: stats.nickels }] : []),
   ];
 
   // Build insight nudges from server-precomputed data

@@ -57,14 +57,9 @@ def get_players(db: Session = Depends(get_db)):
         .subquery()
     )
     win_counts = (
-        db.query(models.SessionPlayer.player_id.label("player_id"), func.count().label("wins"))
-        .join(models.PlaySession, models.PlaySession.id == models.SessionPlayer.session_id)
-        .join(models.Player, models.Player.id == models.SessionPlayer.player_id)
-        .filter(
-            models.PlaySession.winner == models.Player.name,
-            models.PlaySession.winner.isnot(None),
-        )
-        .group_by(models.SessionPlayer.player_id)
+        db.query(models.PlaySession.winner_player_id.label("player_id"), func.count().label("wins"))
+        .filter(models.PlaySession.winner_player_id.isnot(None))
+        .group_by(models.PlaySession.winner_player_id)
         .subquery()
     )
     rows = (
@@ -125,7 +120,7 @@ def rename_player(player_id: int, data: schemas.PlayerUpdate, db: Session = Depe
     wins = (
         db.query(func.count())
         .select_from(models.PlaySession)
-        .filter(models.PlaySession.winner == player.name, models.PlaySession.winner.isnot(None))
+        .filter(models.PlaySession.winner_player_id == player_id)
         .scalar()
     )
     return _build_response(player, cnt or 0, wins or 0)
@@ -185,7 +180,7 @@ async def upload_player_avatar(
     wins = (
         db.query(func.count())
         .select_from(models.PlaySession)
-        .filter(models.PlaySession.winner == player.name, models.PlaySession.winner.isnot(None))
+        .filter(models.PlaySession.winner_player_id == player.id)
         .scalar()
     )
     return _build_response(player, cnt or 0, wins or 0)
@@ -216,7 +211,7 @@ def set_player_avatar_preset(
     wins = (
         db.query(func.count())
         .select_from(models.PlaySession)
-        .filter(models.PlaySession.winner == player.name, models.PlaySession.winner.isnot(None))
+        .filter(models.PlaySession.winner_player_id == player.id)
         .scalar()
     )
     return _build_response(player, cnt or 0, wins or 0)
@@ -249,10 +244,9 @@ def get_player_rankings(db: Session = Depends(get_db)):
     # Pre-compute win counts and avg scores
     player_ids = [p.id for p in players]
     win_rows = (
-        db.query(models.Player.id, func.count(models.PlaySession.id).label("wins"))
-        .join(models.PlaySession, models.PlaySession.winner == models.Player.name)
-        .filter(models.Player.id.in_(player_ids), models.PlaySession.winner.isnot(None))
-        .group_by(models.Player.id)
+        db.query(models.PlaySession.winner_player_id.label("id"), func.count(models.PlaySession.id).label("wins"))
+        .filter(models.PlaySession.winner_player_id.in_(player_ids))
+        .group_by(models.PlaySession.winner_player_id)
         .all()
     ) if player_ids else []
     win_by_id = {r.id: r.wins for r in win_rows}
@@ -322,11 +316,12 @@ def get_player_game_rankings(player_id: int, db: Session = Depends(get_db)):
         )
 
         win_rows = (
-            db.query(models.Player.id, func.count(models.PlaySession.id).label("wins"))
-            .join(models.PlaySession, models.PlaySession.winner == models.Player.name)
-            .filter(models.PlaySession.game_id == game_id)
-            .filter(models.PlaySession.winner.isnot(None))
-            .group_by(models.Player.id)
+            db.query(models.PlaySession.winner_player_id.label("id"), func.count(models.PlaySession.id).label("wins"))
+            .filter(
+                models.PlaySession.game_id == game_id,
+                models.PlaySession.winner_player_id.isnot(None),
+            )
+            .group_by(models.PlaySession.winner_player_id)
             .all()
         )
         win_by_id = {r.id: r.wins for r in win_rows}
@@ -369,8 +364,7 @@ def get_player_stats(player_id: int, db: Session = Depends(get_db)):
         .join(models.SessionPlayer, models.SessionPlayer.session_id == models.PlaySession.id)
         .filter(
             models.SessionPlayer.player_id == player_id,
-            models.PlaySession.winner == player.name,
-            models.PlaySession.winner.isnot(None),
+            models.PlaySession.winner_player_id == player_id,
         )
         .scalar() or 0
     )
@@ -432,8 +426,8 @@ def get_player_stats(player_id: int, db: Session = Depends(get_db)):
     rivalry_rows = (
         db.query(
             models.Player.id.label("co_id"),
-            func.sum(case((models.PlaySession.winner == player.name, 1), else_=0)).label("wins"),
-            func.sum(case((models.PlaySession.winner == models.Player.name, 1), else_=0)).label("losses"),
+            func.sum(case((models.PlaySession.winner_player_id == player_id, 1), else_=0)).label("wins"),
+            func.sum(case((models.PlaySession.winner_player_id == models.Player.id, 1), else_=0)).label("losses"),
         )
         .select_from(models.Player)
         .join(models.SessionPlayer, models.SessionPlayer.player_id == models.Player.id)
@@ -441,7 +435,7 @@ def get_player_stats(player_id: int, db: Session = Depends(get_db)):
         .filter(
             models.SessionPlayer.session_id.in_(target_sessions.select()),
             models.Player.id != player_id,
-            models.PlaySession.winner.isnot(None),
+            models.PlaySession.winner_player_id.isnot(None),
         )
         .group_by(models.Player.id)
         .all()
@@ -451,16 +445,16 @@ def get_player_stats(player_id: int, db: Session = Depends(get_db)):
     # Chronological decided-session history for streak and recent form.
     # Streak can be arbitrarily long so no LIMIT applied; monthly rates use SQL.
     history_rows = (
-        db.query(models.PlaySession.winner)
+        db.query(models.PlaySession.winner_player_id)
         .join(models.SessionPlayer, models.SessionPlayer.session_id == models.PlaySession.id)
         .filter(
             models.SessionPlayer.player_id == player_id,
-            models.PlaySession.winner.isnot(None),
+            models.PlaySession.winner_player_id.isnot(None),
         )
         .order_by(models.PlaySession.played_at.asc(), models.PlaySession.id.asc())
         .all()
     )
-    wlseq = ["W" if r.winner == player.name else "L" for r in history_rows]
+    wlseq = ["W" if r.winner_player_id == player_id else "L" for r in history_rows]
 
     recent_form = list(reversed(wlseq[-10:]))
 
@@ -479,12 +473,12 @@ def get_player_stats(player_id: int, db: Session = Depends(get_db)):
         db.query(
             func.strftime("%Y-%m", models.PlaySession.played_at).label("month"),
             func.count().label("total"),
-            func.sum(case((models.PlaySession.winner == player.name, 1), else_=0)).label("wins"),
+            func.sum(case((models.PlaySession.winner_player_id == player_id, 1), else_=0)).label("wins"),
         )
         .join(models.SessionPlayer, models.SessionPlayer.session_id == models.PlaySession.id)
         .filter(
             models.SessionPlayer.player_id == player_id,
-            models.PlaySession.winner.isnot(None),
+            models.PlaySession.winner_player_id.isnot(None),
         )
         .group_by("month")
         .order_by("month")
@@ -615,6 +609,8 @@ def recalculate_all_elo(db: Session = Depends(get_db)):
     all_ids = {r.id for r in db.query(models.Player.id).all()}
     if not all_ids:
         return {"message": "No players to recalculate", "players_updated": 0}
+    # Backfill Elo history if empty
+    backfilled = elo_db.backfill_elo_history(db)
     elo_db.recalculate_elo_for_players(all_ids, db)
     db.commit()
-    return {"message": "Elo recalculated", "players_updated": len(all_ids)}
+    return {"message": "Elo recalculated", "players_updated": len(all_ids), "history_backfilled": backfilled}

@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 from sqlalchemy import Column, Index, Integer, String, Float, Text, Date, DateTime, Boolean, ForeignKey
+from sqlalchemy.orm import relationship
 from database import Base
 
 
@@ -43,6 +44,8 @@ class Game(Base):
     condition = Column(String(20), nullable=True)  # New/Good/Fair/Poor
     edition = Column(String(255), nullable=True)  # edition/version string
     share_hidden = Column(Boolean, default=False, nullable=False)
+    loaned_to = Column(String(255), nullable=True)  # name of person game is loaned to
+    loaned_at = Column(Date, nullable=True)  # date game was loaned out
 
     # Composite indexes for common filter+sort patterns
     __table_args__ = (
@@ -74,8 +77,11 @@ class PlaySession(Base):
     notes = Column(Text, nullable=True)
     session_rating = Column(Integer, nullable=True)   # 1–5 stars, per-session rating
     winner = Column(String(255), nullable=True)
+    winner_player_id = Column(Integer, ForeignKey("players.id", ondelete="SET NULL"), nullable=True, index=True)
     solo = Column(Boolean, default=False, nullable=False)
     date_added = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+
+    winner_player = relationship("Player", foreign_keys=[winner_player_id], lazy="joined")
 
     __table_args__ = (
         Index('ix_play_sessions_game_played', 'game_id', 'played_at'),
@@ -100,6 +106,16 @@ class SessionPlayer(Base):
     session_id = Column(Integer, ForeignKey("play_sessions.id", ondelete="CASCADE"), primary_key=True)
     player_id = Column(Integer, ForeignKey("players.id", ondelete="CASCADE"), primary_key=True)
     score = Column(Integer, nullable=True)
+
+
+class EloHistory(Base):
+    __tablename__ = "elo_history"
+
+    id = Column(Integer, primary_key=True, index=True)
+    session_id = Column(Integer, ForeignKey("play_sessions.id", ondelete="CASCADE"), nullable=False, index=True)
+    player_id = Column(Integer, ForeignKey("players.id", ondelete="CASCADE"), nullable=False, index=True)
+    elo_after = Column(Float, nullable=False)
+    games_played_after = Column(Integer, nullable=False)
 
 
 class ShareToken(Base):

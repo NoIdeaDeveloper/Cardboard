@@ -1,6 +1,6 @@
 import logging
 from datetime import datetime, timezone
-from typing import List
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import desc, func
@@ -83,6 +83,14 @@ def _link_players(session_id: int, player_names: List[str], db: Session, scores:
     db.flush()
 
 
+def _resolve_winner_id(winner_name: Optional[str], db: Session) -> Optional[int]:
+    """Resolve a winner name string to a player ID."""
+    if not winner_name:
+        return None
+    player = db.query(models.Player).filter(models.Player.name == winner_name).first()
+    return player.id if player else None
+
+
 @router.get("/api/games/{game_id}/sessions", response_model=List[schemas.PlaySessionResponse])
 def get_sessions(game_id: int, db: Session = Depends(get_db)):
     get_game_or_404(game_id, db)
@@ -126,13 +134,14 @@ def add_session(game_id: int, session: schemas.PlaySessionCreate, db: Session = 
 
     data = session.model_dump(exclude={"player_names", "scores"})
     db_session = models.PlaySession(game_id=game_id, **data)
+    db_session.winner_player_id = _resolve_winner_id(session.winner, db)
     db.add(db_session)
     db.flush()
 
     if session.player_names:
         _link_players(db_session.id, session.player_names, db, session.scores)
         if session.scores:
-            elo_db.apply_elo_for_new_session(session.player_names, session.scores, db)
+            elo_db.apply_elo_for_new_session(session.player_names, session.scores, db_session.id, db)
 
     _sync_last_played(game_id, db, commit=False)
     db.commit()
@@ -167,6 +176,10 @@ def update_session(session_id: int, data: schemas.PlaySessionUpdate, db: Session
     scores = update_data.pop("scores", None)
     for field, value in update_data.items():
         setattr(db_session, field, value)
+
+    # Resolve winner name to player FK
+    if "winner" in update_data:
+        db_session.winner_player_id = _resolve_winner_id(db_session.winner, db)
 
     if player_names is not None:
         _link_players(db_session.id, player_names, db, scores)
@@ -238,15 +251,17 @@ def add_bulk_session(body: schemas.BulkSessionCreate, db: Session = Depends(get_
     for game_id in body.game_ids:
         get_game_or_404(game_id, db)
     data = body.model_dump(exclude={"game_ids", "player_names", "scores"})
+    winner_id = _resolve_winner_id(body.winner, db)
     db_sessions = []
     for game_id in body.game_ids:
         db_session = models.PlaySession(game_id=game_id, **data)
+        db_session.winner_player_id = winner_id
         db.add(db_session)
         db.flush()
         if body.player_names:
             _link_players(db_session.id, body.player_names, db, body.scores)
             if body.scores:
-                elo_db.apply_elo_for_new_session(body.player_names, body.scores, db)
+                elo_db.apply_elo_for_new_session(body.player_names, body.scores, db_session.id, db)
         _sync_last_played(game_id, db, commit=False)
         db_sessions.append((game_id, db_session))
     db.commit()

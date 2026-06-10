@@ -465,6 +465,14 @@ def get_game_image(game_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Image not cached")
     return FileResponse(candidate, headers={"Cache-Control": "public, max-age=604800"})
 
+@router.get("/{game_id}/thumbnail")
+def get_game_thumbnail(game_id: int, db: Session = Depends(get_db)):
+    base_dir = os.path.realpath(IMAGES_DIR)
+    candidate = os.path.realpath(os.path.join(IMAGES_DIR, f"{game_id}_thumb.webp"))
+    if not candidate.startswith(base_dir + os.sep) or not os.path.isfile(candidate):
+        raise HTTPException(status_code=404, detail="Thumbnail not cached")
+    return FileResponse(candidate, media_type="image/webp", headers={"Cache-Control": "public, max-age=604800"})
+
 @router.post("/{game_id}/image", status_code=204)
 async def upload_image(game_id: int, file: UploadFile = File(...), db: Session = Depends(get_db)):
     db_game = get_game_or_404(game_id, db)
@@ -488,6 +496,11 @@ async def upload_image(game_id: int, file: UploadFile = File(...), db: Session =
     db_game.image_url = f"/api/games/{game_id}/image"
     db_game.image_cached = True
     db_game.image_ext = ext
+    # Generate thumbnail
+    from routers.games._common import _generate_thumbnail
+    thumb_filename = _generate_thumbnail(dest, game_id)
+    if thumb_filename:
+        db_game.thumbnail_url = f"/api/games/{game_id}/thumbnail"
     db.commit()
     logger.info("Image uploaded for game %d: %s", game_id, safe_name)
 
@@ -497,6 +510,7 @@ def delete_image(game_id: int, db: Session = Depends(get_db)):
 
     _delete_cached_image(game_id)
     db_game.image_url = None
+    db_game.thumbnail_url = None
     db_game.image_cached = False
     db_game.image_ext = None
     db.commit()

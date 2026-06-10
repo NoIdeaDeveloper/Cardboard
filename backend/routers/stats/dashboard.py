@@ -29,7 +29,12 @@ def _iso_month_to_label(iso_month: str) -> str:
         return iso_month
 
 @router.get("/stats", response_model=schemas.StatsResponse)
-def get_stats(db: Session = Depends(get_db)):
+def get_stats(request: Request, db: Session = Depends(get_db)):
+    # ── ETag caching ────────────────────────────────────────────────────────
+    etag = collection_etag(db)
+    if request.headers.get("if-none-match") == etag:
+        return Response(status_code=304)
+
     # ── Game counts ──────────────────────────────────────────────────────────
     by_status = _status_counts(db)
     total_games = sum(by_status.values())
@@ -191,6 +196,20 @@ def get_stats(db: Session = Depends(get_db)):
     )
     session_counts = {str(gid): count for gid, count in session_counts_rows}
 
+    # ── H-index and play frequency buckets ─────────────────────────────────
+    # H-index: largest h such that h games have been played h times each
+    all_counts = sorted([cnt for _, cnt in session_counts_rows], reverse=True)
+    h_index = 0
+    for i, cnt in enumerate(all_counts, 1):
+        if cnt >= i:
+            h_index = i
+        else:
+            break
+    # Dimes (10+), Nickels (5+), Quarters (25+)
+    dimes = sum(1 for cnt in all_counts if cnt >= 10)
+    nickels = sum(1 for cnt in all_counts if cnt >= 5)
+    quarters = sum(1 for cnt in all_counts if cnt >= 25)
+
     # ── Collection value stats ────────────────────────────────────────────────
     owned_priced = (
         db.query(models.Game.id, models.Game.name, models.Game.purchase_price,
@@ -297,10 +316,9 @@ def get_stats(db: Session = Depends(get_db)):
     # Get win counts for these players
     top_player_ids = [r.id for r in top_player_rows]
     win_rows = (
-        db.query(models.Player.id, func.count(models.PlaySession.id).label("wins"))
-        .join(models.PlaySession, models.PlaySession.winner == models.Player.name)
-        .filter(models.Player.id.in_(top_player_ids), models.PlaySession.winner.isnot(None))
-        .group_by(models.Player.id)
+        db.query(models.PlaySession.winner_player_id.label("id"), func.count(models.PlaySession.id).label("wins"))
+        .filter(models.PlaySession.winner_player_id.in_(top_player_ids))
+        .group_by(models.PlaySession.winner_player_id)
         .all()
     ) if top_player_ids else []
     win_by_id = {r.id: r.wins for r in win_rows}
@@ -425,6 +443,7 @@ def get_stats(db: Session = Depends(get_db)):
             models.Game.last_played < dormant_cutoff,
         )
         .order_by(models.Game.last_played.asc())
+        .limit(50)
         .all()
     )
     dormant_games = [
@@ -458,6 +477,7 @@ def get_stats(db: Session = Depends(get_db)):
             models.PlaySession.id.is_(None),
         )
         .order_by(models.Game.date_added.asc())
+        .limit(50)
         .all()
     )
     never_played_list = [
@@ -740,7 +760,7 @@ def get_stats(db: Session = Depends(get_db)):
 
     logger.info("Stats computed: %d games, %d sessions, %d expansions", total_games, total_sessions, total_expansions)
 
-    return schemas.StatsResponse(
+    resp = JSONResponse(content=schemas.StatsResponse(
         total_games=total_games,
         by_status=by_status,
         total_sessions=total_sessions,
@@ -755,7 +775,6 @@ def get_stats(db: Session = Depends(get_db)):
         added_by_month=added_by_month,
         sessions_by_month=sessions_by_month,
         recent_sessions=recent_sessions,
-        session_counts=session_counts,
         total_expansions=total_expansions,
         top_players=top_players,
         sessions_by_dow=sessions_by_dow,
@@ -780,6 +799,13 @@ def get_stats(db: Session = Depends(get_db)):
         collection_churn=collection_churn,
         health_notifications=health_notifications,
         trade_sell=trade_sell_games,
-    )
+        h_index=h_index,
+        dimes=dimes,
+        nickels=nickels,
+        quarters=quarters,
+    ).model_dump())
+    resp.headers["ETag"] = etag
+    resp.headers["Cache-Control"] = "private, no-cache"
+    return resp
 
 

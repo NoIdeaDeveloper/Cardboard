@@ -37,6 +37,8 @@ _cache_semaphore = _threading.BoundedSemaphore(2)
 
 _safe_ext = safe_image_ext  # backward-compatible alias
 
+THUMB_MAX_SIZE = 400  # max width/height in pixels for thumbnails
+
 
 def _heat_level(last_played) -> int:
     if not last_played:
@@ -47,6 +49,25 @@ def _heat_level(last_played) -> int:
 def _delete_cached_image(game_id: int) -> None:
     for path in glob.glob(os.path.join(IMAGES_DIR, f"{game_id}.*")):
         safe_delete_file(path)
+    # Also delete thumbnail
+    for path in glob.glob(os.path.join(IMAGES_DIR, f"{game_id}_thumb.*")):
+        safe_delete_file(path)
+
+
+def _generate_thumbnail(src_path: str, game_id: int) -> str | None:
+    """Generate a ~400px WebP thumbnail from src_path. Returns thumbnail filename or None on failure."""
+    try:
+        from PIL import Image
+        thumb_path = os.path.join(IMAGES_DIR, f"{game_id}_thumb.webp")
+        with Image.open(src_path) as img:
+            img.thumbnail((THUMB_MAX_SIZE, THUMB_MAX_SIZE), Image.LANCZOS)
+            if img.mode in ("RGBA", "P"):
+                img = img.convert("RGB")
+            img.save(thumb_path, "WEBP", quality=80)
+        return f"{game_id}_thumb.webp"
+    except Exception:
+        logger.warning("Thumbnail generation failed for game %d", game_id, exc_info=True)
+        return None
 
 def _cache_game_image(game_id: int, image_url: str) -> None:
     """Download image_url and store locally; update game record. Runs as a background task."""
@@ -119,6 +140,10 @@ def _cache_game_image(game_id: int, image_url: str) -> None:
                 game.image_cached = True
                 game.image_ext = ext
                 game.image_cache_status = "cached"
+                # Generate thumbnail
+                thumb_filename = _generate_thumbnail(dest, game_id)
+                if thumb_filename:
+                    game.thumbnail_url = f"/api/games/{game_id}/thumbnail"
                 db.commit()
                 logger.info("Image cached for game %d", game_id)
             else:

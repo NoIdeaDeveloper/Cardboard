@@ -56,6 +56,8 @@ class GameBase(BaseModel):
     condition: Optional[str] = Field(None, pattern='^(New|Good|Fair|Poor)$')
     edition: Optional[str] = Field(None, max_length=255)
     share_hidden: bool = False
+    loaned_to: Optional[str] = Field(None, max_length=255)
+    loaned_at: Optional[date] = None
 
     @model_validator(mode='after')
     def check_min_max(self):
@@ -107,6 +109,8 @@ class GameUpdate(BaseModel):
     condition: Optional[str] = Field(None, pattern='^(New|Good|Fair|Poor)$')
     edition: Optional[str] = Field(None, max_length=255)
     share_hidden: Optional[bool] = None
+    loaned_to: Optional[str] = Field(None, max_length=255)
+    loaned_at: Optional[date] = None
 
     @model_validator(mode='after')
     def check_min_max(self):
@@ -214,6 +218,7 @@ class PlaySessionResponse(PlaySessionCreate):
     id: int
     game_id: int
     date_added: Optional[datetime] = None
+    winner_player_id: Optional[int] = None
     players: List[str] = []  # resolved player names
     player_scores: Dict[str, int] = {}  # player_name -> score (populated separately)
     game_session_count: Optional[int] = None   # total sessions for this game (set on POST only)
@@ -588,7 +593,7 @@ class StatsResponse(BaseModel):
     added_by_month: List[AddedByMonthEntry]
     sessions_by_month: List[SessionsByMonthEntry]
     recent_sessions: List[RecentSessionEntry]
-    session_counts: Dict[str, int]
+    session_counts: Dict[str, int] = {}  # deprecated: kept for backward compat, now empty
     total_expansions: int = 0
     top_players: List[TopPlayerEntry] = []
     sessions_by_dow: List[SessionsByDowEntry] = []
@@ -614,6 +619,10 @@ class StatsResponse(BaseModel):
     collection_churn: Optional[CollectionChurn] = None
     health_notifications: List[str] = []
     trade_sell: List["TradeSellEntry"] = []
+    h_index: int = 0
+    dimes: int = 0
+    nickels: int = 0
+    quarters: int = 0
 
 
 class GroupRecommendRequest(BaseModel):

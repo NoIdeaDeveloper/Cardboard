@@ -7,3 +7,4 @@ pydantic==2.12.5
 certifi
 reportlab==4.2.5
 defusedxml==0.7.1
+Pillow>=10.0.0

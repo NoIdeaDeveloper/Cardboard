@@ -5049,6 +5049,32 @@ img.ql-chip-avatar { display: block; object-fit: cover; }
   letter-spacing: 0.02em;
 }
 
+.loan-badge {
+  display: inline-block;
+  font-size: 0.68rem;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 10px;
+  background: rgba(232,160,32,0.12);
+  border: 1px solid rgba(232,160,32,0.3);
+  color: var(--warning);
+  letter-spacing: 0.02em;
+}
+
+.loan-section .loan-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.loan-section .loan-person {
+  font-weight: 600;
+  color: var(--warning);
+}
+.loan-section .loan-date {
+  font-size: 0.85rem;
+  color: var(--text-2);
+}
+
 /* ===== Game Night Modal ===== */
 #gn-results {
   display: flex;
