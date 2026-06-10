@@ -517,6 +517,9 @@ if ('serviceWorker' in navigator) {
     document.querySelectorAll('[data-view]').forEach(btn => {
       btn.addEventListener('click', () => {
         const targetView = btn.dataset.view;
+        // Players and Share are modals, not views
+        if (targetView === 'players') { openPlayersModal(); return; }
+        if (targetView === 'share')   { openShareManageModal(); return; }
         const targetViewEl = document.getElementById(`view-${targetView}`);
         
         // If already on the target view, smooth scroll to top
