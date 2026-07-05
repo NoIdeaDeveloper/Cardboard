@@ -17,6 +17,13 @@ const COLLECTION_PREFS_DEFAULTS = {
   filterTime: null,
   filterMechanics: [],
   filterCategories: [],
+  filterLabels: [],
+  filterDesigners: [],
+  filterPublishers: [],
+  filterCondition: null,
+  filterLoaned: null,
+  filterPriceMin: null,
+  filterPriceMax: null,
   filterLocation: null,
 };
 
@@ -28,6 +35,9 @@ export function loadCollectionPrefs() {
   // Defensive coercion: localStorage can be edited by users / older versions.
   if (!Array.isArray(raw.filterMechanics))  raw.filterMechanics  = [];
   if (!Array.isArray(raw.filterCategories)) raw.filterCategories = [];
+  if (!Array.isArray(raw.filterLabels))     raw.filterLabels     = [];
+  if (!Array.isArray(raw.filterDesigners))  raw.filterDesigners  = [];
+  if (!Array.isArray(raw.filterPublishers)) raw.filterPublishers = [];
   return raw;
 }
 
@@ -53,6 +63,13 @@ export const state = {
   filterTime: _cp.filterTime,
   filterMechanics: _cp.filterMechanics,
   filterCategories: _cp.filterCategories,
+  filterLabels: _cp.filterLabels,
+  filterDesigners: _cp.filterDesigners,
+  filterPublishers: _cp.filterPublishers,
+  filterCondition: _cp.filterCondition,
+  filterLoaned: _cp.filterLoaned,
+  filterPriceMin: _cp.filterPriceMin,
+  filterPriceMax: _cp.filterPriceMax,
   filterLocation: _cp.filterLocation,
   showExpansions: false,
   bulkMode: false,
@@ -70,6 +87,13 @@ export function saveCollectionPrefs() {
     filterTime: state.filterTime,
     filterMechanics: state.filterMechanics,
     filterCategories: state.filterCategories,
+    filterLabels: state.filterLabels,
+    filterDesigners: state.filterDesigners,
+    filterPublishers: state.filterPublishers,
+    filterCondition: state.filterCondition,
+    filterLoaned: state.filterLoaned,
+    filterPriceMin: state.filterPriceMin,
+    filterPriceMax: state.filterPriceMax,
     filterLocation: state.filterLocation,
   });
 }

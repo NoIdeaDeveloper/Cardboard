@@ -10,7 +10,7 @@ from fastapi import (
     APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, Request, UploadFile,
 )
 from fastapi.responses import FileResponse, JSONResponse, Response
-from sqlalchemy import and_, asc, case, desc, exists, func, or_
+from sqlalchemy import and_, asc, case, desc, exists, func, or_, text
 from sqlalchemy.orm import Session
 
 from database import get_db
@@ -19,6 +19,7 @@ import schemas
 from utils import (
     get_game_or_404, validate_file_extension, collection_etag,
     safe_write_file, safe_delete_file, validate_image_content,
+    strip_image_metadata,
 )
 from constants import (
     MAX_IMAGE_SIZE, ALLOWED_IMAGE_EXTENSIONS,
@@ -116,8 +117,15 @@ def get_games(
     added_month: Optional[str] = Query(None, pattern=r"^\d{4}-\d{2}$"),
     mechanics: Optional[str] = Query(None, max_length=1000),
     categories: Optional[str] = Query(None, max_length=1000),
+    labels: Optional[str] = Query(None, max_length=1000),
+    designers: Optional[str] = Query(None, max_length=1000),
+    publishers: Optional[str] = Query(None, max_length=1000),
+    condition: Optional[str] = Query(None, pattern="^(New|Good|Fair|Poor)$"),
+    loaned: Optional[bool] = None,
+    price_min: Optional[float] = Query(None, ge=0),
+    price_max: Optional[float] = Query(None, ge=0),
     location: Optional[str] = Query(None, max_length=255),
-    limit: Optional[int] = Query(None, ge=1, le=10000),
+    limit: Optional[int] = Query(None, ge=1, le=500),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
 ):
@@ -138,14 +146,23 @@ def get_games(
         tokens = [t for t in search.split() if len(t) >= 2][:8]
         if not tokens and search.strip():
             tokens = [search.strip()]  # all-short input — fall back to whole string
+        # FTS5 MATCH for game names (uses the games_fts index — no full scan).
+        # Each token gets a '*' suffix for prefix matching ("cat" → "cat*").
+        # FTS5 tokens are space-separated (implicit AND).
+        fts_query = " ".join(f"{token}*" for token in tokens)
+        fts_match = text("games.id IN (SELECT rowid FROM games_fts WHERE games_fts MATCH :fts_q)").bindparams(fts_q=fts_query)
         for token in tokens:
             like = f"%{token}%"
             query = query.filter(
                 or_(
-                    models.Game.name.ilike(like),
+                    fts_match,
                     _tag_exists(models.GameDesigner, models.GameDesigner.designer_id, models.Designer, models.Designer.name.ilike(like)),
                     _tag_exists(models.GameMechanic, models.GameMechanic.mechanic_id, models.Mechanic, models.Mechanic.name.ilike(like)),
                     _tag_exists(models.GameCategory, models.GameCategory.category_id, models.Category, models.Category.name.ilike(like)),
+                    _tag_exists(models.GamePublisher, models.GamePublisher.publisher_id, models.Publisher, models.Publisher.name.ilike(like)),
+                    _tag_exists(models.GameLabel, models.GameLabel.label_id, models.Label, models.Label.name.ilike(like)),
+                    models.Game.edition.ilike(like),
+                    models.Game.user_notes.ilike(like),
                 )
             )
 
@@ -210,6 +227,46 @@ def get_games(
             query = query.filter(
                 or_(*(_tag_exists(models.GameCategory, models.GameCategory.category_id, models.Category, models.Category.name == c) for c in category_list))
             )
+
+    if labels:
+        label_list = [l.strip() for l in labels.split(",") if l.strip()]
+        if len(label_list) > 50:
+            raise HTTPException(status_code=422, detail="Too many labels specified (max 50)")
+        if label_list:
+            query = query.filter(
+                or_(*(_tag_exists(models.GameLabel, models.GameLabel.label_id, models.Label, models.Label.name == l) for l in label_list))
+            )
+
+    if designers:
+        designer_list = [d.strip() for d in designers.split(",") if d.strip()]
+        if len(designer_list) > 50:
+            raise HTTPException(status_code=422, detail="Too many designers specified (max 50)")
+        if designer_list:
+            query = query.filter(
+                or_(*(_tag_exists(models.GameDesigner, models.GameDesigner.designer_id, models.Designer, models.Designer.name == d) for d in designer_list))
+            )
+
+    if publishers:
+        publisher_list = [p.strip() for p in publishers.split(",") if p.strip()]
+        if len(publisher_list) > 50:
+            raise HTTPException(status_code=422, detail="Too many publishers specified (max 50)")
+        if publisher_list:
+            query = query.filter(
+                or_(*(_tag_exists(models.GamePublisher, models.GamePublisher.publisher_id, models.Publisher, models.Publisher.name == p) for p in publisher_list))
+            )
+
+    if condition:
+        query = query.filter(models.Game.condition == condition)
+
+    if loaned is True:
+        query = query.filter(models.Game.loaned_to.isnot(None), models.Game.loaned_to != "")
+    elif loaned is False:
+        query = query.filter(or_(models.Game.loaned_to.is_(None), models.Game.loaned_to == ""))
+
+    if price_min is not None:
+        query = query.filter(models.Game.purchase_price >= price_min)
+    if price_max is not None:
+        query = query.filter(models.Game.purchase_price <= price_max)
 
     SORT_COLUMNS = {
         "min_playtime": models.Game.min_playtime,
@@ -278,8 +335,25 @@ def check_duplicate(
     if not name_lower:
         return schemas.DuplicateCheckResponse(duplicates=[])
 
-    # Fetch all games for comparison (collection is typically small enough)
-    games = db.query(models.Game.id, models.Game.name, models.Game.status, models.Game.bgg_id).all()
+    # Filter candidates in SQL first (avoid loading all games for large collections).
+    # Exact match, bgg_id match, or name contains/contained-by the input (substring
+    # check catches most fuzzy candidates; the expensive SequenceMatcher runs only
+    # on this small candidate set).
+    like_pat = f"%{name_lower}%"
+    candidate_filter = or_(
+        func.lower(models.Game.name) == name_lower,
+        func.lower(models.Game.name).like(like_pat),
+        func.lower(models.Game.name).like(f"{name_lower}%"),
+        func.lower(models.Game.name).like(f"%{name_lower}"),
+    )
+    if bgg_id is not None:
+        candidate_filter = or_(candidate_filter, models.Game.bgg_id == bgg_id)
+    games = (
+        db.query(models.Game.id, models.Game.name, models.Game.status, models.Game.bgg_id)
+        .filter(candidate_filter)
+        .limit(50)
+        .all()
+    )
 
     results: list[schemas.DuplicateCheckEntry] = []
 
@@ -303,6 +377,25 @@ def check_duplicate(
             ))
 
     return schemas.DuplicateCheckResponse(duplicates=results[:5])
+
+@router.get("/search/suggestions")
+def get_search_suggestions(
+    q: str = Query("", max_length=200),
+    db: Session = Depends(get_db),
+):
+    """Return close-match game names for 'did you mean?' suggestions.
+
+    Called by the frontend when a search returns zero results. Uses
+    difflib.get_close_matches against all game names (the collection is
+    small enough for an in-memory comparison).
+    """
+    q = q.strip()
+    if len(q) < 2:
+        return {"suggestions": []}
+    names = db.query(models.Game.name).all()
+    name_list = [n[0] for n in names]
+    matches = difflib.get_close_matches(q, name_list, n=5, cutoff=0.5)
+    return {"suggestions": matches}
 
 @router.get("/{game_id}", response_model=schemas.GameResponse)
 def get_game(game_id: int, db: Session = Depends(get_db)):
@@ -486,6 +579,8 @@ async def upload_image(game_id: int, file: UploadFile = File(...), db: Session =
 
     if not validate_image_content(content):
         raise HTTPException(status_code=400, detail="File content does not match a valid image format")
+
+    content = strip_image_metadata(content, ext)
 
     os.makedirs(IMAGES_DIR, exist_ok=True)
     _delete_cached_image(game_id)

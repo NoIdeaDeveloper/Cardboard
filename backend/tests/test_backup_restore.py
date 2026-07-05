@@ -125,12 +125,70 @@ def _make_zip(files: dict) -> bytes:
 
 
 def _empty_sqlite_db() -> bytes:
-    """Return the raw bytes of a valid but empty SQLite database."""
+    """Return the raw bytes of a valid but empty SQLite database (no tables)."""
     tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
     tmp.close()
     try:
         conn = sqlite3.connect(tmp.name)
         conn.execute("PRAGMA user_version = 1")
+        conn.close()
+        with open(tmp.name, "rb") as f:
+            return f.read()
+    finally:
+        os.unlink(tmp.name)
+
+
+def _valid_schema_db() -> bytes:
+    """Return the raw bytes of a valid SQLite database with the full cardboard schema."""
+    tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+    tmp.close()
+    try:
+        eng = create_engine(f"sqlite:///{tmp.name}", connect_args={"check_same_thread": False})
+        Base.metadata.create_all(bind=eng)
+        eng.dispose()
+        with open(tmp.name, "rb") as f:
+            return f.read()
+    finally:
+        os.unlink(tmp.name)
+
+
+def _db_missing_table(table_name: str) -> bytes:
+    """Return a SQLite DB with the full schema minus one table."""
+    tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+    tmp.close()
+    try:
+        eng = create_engine(f"sqlite:///{tmp.name}", connect_args={"check_same_thread": False})
+        Base.metadata.create_all(bind=eng, tables=[
+            t for t in Base.metadata.sorted_tables if t.name != table_name
+        ])
+        eng.dispose()
+        with open(tmp.name, "rb") as f:
+            return f.read()
+    finally:
+        os.unlink(tmp.name)
+
+
+def _db_missing_column(table_name: str, column_name: str) -> bytes:
+    """Return a SQLite DB with the full schema minus one column from a table."""
+    tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+    tmp.close()
+    try:
+        eng = create_engine(f"sqlite:///{tmp.name}", connect_args={"check_same_thread": False})
+        Base.metadata.create_all(bind=eng)
+        eng.dispose()
+        conn = sqlite3.connect(tmp.name)
+        # SQLite doesn't support DROP COLUMN before 3.35; use the table-rebuild method.
+        col_defs = conn.execute(f"PRAGMA table_info('{table_name}')").fetchall()
+        keep_cols = [r[1] for r in col_defs if r[1] != column_name]
+        if len(keep_cols) == len(col_defs):
+            conn.close()
+            raise ValueError(f"Column {column_name} not found in {table_name}")
+        cols_csv = ", ".join(keep_cols)
+        conn.executescript(f"""
+            ALTER TABLE {table_name} RENAME TO _{table_name}_old;
+            CREATE TABLE {table_name} AS SELECT {cols_csv} FROM _{table_name}_old;
+            DROP TABLE _{table_name}_old;
+        """)
         conn.close()
         with open(tmp.name, "rb") as f:
             return f.read()
@@ -214,7 +272,7 @@ def test_restore_roundtrip_preserves_data(backup_client, file_env):
 def test_restore_with_images_extracts_to_data_dir(backup_client, file_env):
     """Images bundled in a backup ZIP land in DATA_DIR/images/."""
     zip_bytes = _make_zip({
-        "cardboard.db": _empty_sqlite_db(),
+        "cardboard.db": _valid_schema_db(),
         "images/99.jpg": b"FAKEIMG",
     })
     r = _post_restore(backup_client, zip_bytes)
@@ -225,7 +283,7 @@ def test_restore_with_images_extracts_to_data_dir(backup_client, file_env):
 def test_restore_with_gallery_and_instructions(backup_client, file_env):
     """gallery/ and instructions/ subdirs in the ZIP are also restored."""
     zip_bytes = _make_zip({
-        "cardboard.db": _empty_sqlite_db(),
+        "cardboard.db": _valid_schema_db(),
         "gallery/1_cover.jpg": b"GALLERY",
         "instructions/1_manual.pdf": b"PDF",
     })
@@ -283,7 +341,7 @@ def test_restore_path_traversal_does_not_escape_data_dir(backup_client, file_env
     """A ZIP entry like images/../../../etc/evil.txt must not write outside data_dir."""
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as zf:
-        zf.writestr("cardboard.db", _empty_sqlite_db())
+        zf.writestr("cardboard.db", _valid_schema_db())
         # Craft a ZipInfo with a traversal path
         info = zipfile.ZipInfo("images/../../../tmp/evil_cardboard.txt")
         zf.writestr(info, b"EVIL")
@@ -297,7 +355,7 @@ def test_restore_path_traversal_does_not_escape_data_dir(backup_client, file_env
 def test_restore_skips_unknown_subdirs(backup_client, file_env):
     """Files outside images/gallery/instructions are silently ignored."""
     zip_bytes = _make_zip({
-        "cardboard.db": _empty_sqlite_db(),
+        "cardboard.db": _valid_schema_db(),
         "secrets/token.txt": b"SECRET",
     })
     r = _post_restore(backup_client, zip_bytes)
@@ -387,3 +445,123 @@ def test_backup_registers_and_cleans_temp_files(backup_client, file_env):
     _gmod._cleanup_temp_backups()
     assert len(_gmod._temp_backup_files) == 0, "Cleanup did not clear tracking set"
     assert not os.path.exists(tmp.name), f"Temp file was not removed: {tmp.name}"
+
+
+# ---------------------------------------------------------------------------
+# Schema validation on restore
+# ---------------------------------------------------------------------------
+
+def test_restore_rejects_db_missing_tables(backup_client):
+    """A DB missing required tables must be rejected with 422."""
+    zip_bytes = _make_zip({"cardboard.db": _db_missing_table("play_sessions")})
+    r = _post_restore(backup_client, zip_bytes)
+    assert r.status_code == 422
+    assert "schema mismatch" in r.json()["detail"].lower()
+    assert "play_sessions" in r.json()["detail"]
+
+
+def test_restore_rejects_db_missing_column(backup_client):
+    """A DB missing a required column must be rejected with 422."""
+    zip_bytes = _make_zip({"cardboard.db": _db_missing_column("games", "name")})
+    r = _post_restore(backup_client, zip_bytes)
+    assert r.status_code == 422
+    assert "schema mismatch" in r.json()["detail"].lower()
+    assert "name" in r.json()["detail"]
+
+
+def test_restore_preview_rejects_schema_mismatch(backup_client):
+    """Preview must also reject a DB with missing tables."""
+    zip_bytes = _make_zip({"cardboard.db": _db_missing_table("players")})
+    r = backup_client.post(
+        "/api/games/restore/preview",
+        files={"file": ("backup.zip", io.BytesIO(zip_bytes), "application/zip")},
+    )
+    assert r.status_code == 422
+    assert "players" in r.json()["detail"]
+
+
+def test_restore_accepts_valid_schema(backup_client):
+    """A DB with the full schema (but no data) should pass validation."""
+    zip_bytes = _make_zip({"cardboard.db": _valid_schema_db()})
+    r = _post_restore(backup_client, zip_bytes)
+    assert r.status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# CSV export — private field exclusion
+# ---------------------------------------------------------------------------
+
+import csv as _csv
+
+def _seed_game_with_private_fields(db_session):
+    """Seed a game with all private fields populated."""
+    import models
+    g = models.Game(
+        name="Wingspan", status="owned",
+        purchase_price=79.99, purchase_date=__import__("datetime").date(2023, 6, 15),
+        purchase_location="CoolStuffInc", location="Shelf B-3",
+        condition="Good", edition="First Edition",
+        user_notes="Birthday gift from Sarah — keep forever",
+    )
+    db_session.add(g)
+    db_session.commit()
+    return g
+
+
+def test_csv_export_excludes_private_fields_by_default(client, db):
+    """CSV export without include_private must omit private columns and values."""
+    _seed_game_with_private_fields(db)
+    r = client.get("/api/games/export/csv")
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("text/csv")
+
+    reader = _csv.DictReader(io.StringIO(r.text))
+    header = reader.fieldnames
+    # Public fields present
+    assert "name" in header
+    assert "status" in header
+    assert "user_rating" in header
+    # Private fields absent
+    assert "purchase_price" not in header
+    assert "purchase_date" not in header
+    assert "purchase_location" not in header
+    assert "location" not in header
+    assert "condition" not in header
+    assert "edition" not in header
+    assert "user_notes" not in header
+
+    rows = list(reader)
+    assert len(rows) == 1
+    assert rows[0]["name"] == "Wingspan"
+    # Private values must not appear anywhere in the row
+    assert "79.99" not in r.text
+    assert "CoolStuffInc" not in r.text
+    assert "Shelf B-3" not in r.text
+    assert "Birthday gift" not in r.text
+
+
+def test_csv_export_includes_private_fields_when_requested(client, db):
+    """CSV export with include_private=true must include private columns and values."""
+    _seed_game_with_private_fields(db)
+    r = client.get("/api/games/export/csv?include_private=true")
+    assert r.status_code == 200
+
+    reader = _csv.DictReader(io.StringIO(r.text))
+    header = reader.fieldnames
+    # Private fields present
+    assert "purchase_price" in header
+    assert "purchase_date" in header
+    assert "purchase_location" in header
+    assert "location" in header
+    assert "condition" in header
+    assert "edition" in header
+    assert "user_notes" in header
+
+    rows = list(reader)
+    assert len(rows) == 1
+    assert rows[0]["name"] == "Wingspan"
+    assert rows[0]["purchase_price"] == "79.99"
+    assert rows[0]["purchase_location"] == "CoolStuffInc"
+    assert rows[0]["location"] == "Shelf B-3"
+    assert rows[0]["condition"] == "Good"
+    assert "Birthday gift" in rows[0]["user_notes"]

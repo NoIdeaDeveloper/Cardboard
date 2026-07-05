@@ -179,11 +179,24 @@ const API = {
   // Duplicate / expansion guard
   checkDuplicate: (name, bggId) => request('GET', `/games/check-duplicate?name=${encodeURIComponent(name)}${bggId ? `&bgg_id=${bggId}` : ''}`),
 
+  // Search suggestions ("did you mean?")
+  searchSuggestions: (q) => request('GET', `/games/search/suggestions?q=${encodeURIComponent(q)}`),
+
   // Game night suggestions
   suggestGames: (playerCount, maxMinutes) => request('POST', '/games/suggest', { player_count: playerCount, max_minutes: maxMinutes }),
 
   // Group recommendation (player matchmaking)
   groupRecommend: (playerIds, maxMinutes, mechanic) => request('POST', '/games/group-recommend', { player_ids: playerIds, max_minutes: maxMinutes, mechanic }),
+
+  // Plan a full evening sequence (opener + main + closer)
+  planEvening: (totalMinutes, playerCount, playerIds, teachMode) => request('POST', '/games/plan-evening', { total_minutes: totalMinutes, player_count: playerCount, player_ids: playerIds, teach_mode: teachMode }),
+
+  // Maintenance logs
+  listMaintenance: (gameId) => request('GET', `/games/${gameId}/maintenance`),
+  addMaintenance: (gameId, kind, description) => request('POST', `/games/${gameId}/maintenance`, { kind, description }),
+  updateMaintenance: (entryId, data) => request('PATCH', `/games/maintenance/${entryId}`, data),
+  deleteMaintenance: (entryId) => request('DELETE', `/games/maintenance/${entryId}`),
+  listOpenMaintenance: () => request('GET', '/games/maintenance/open'),
 
   // "Play This Next" single-game recommendation
   recommend: (params) => request('GET', `/recommend?${params}`),
@@ -217,12 +230,20 @@ const API = {
   submitWantToPlay:  (token, gameId, data) => request('POST', `/share/${token}/games/${gameId}/want-to-play`, data),
   getWantToPlayRequests: ()          => request('GET',    '/share/requests'),
   markRequestSeen:   (id)            => request('PATCH',  `/share/requests/${id}/seen`),
+  deleteRequest:     (id)            => request('DELETE', `/share/requests/${id}`),
 
   // Goals
   checkGoals:  ()          => request('POST',   '/goals/check'),
   getGoals:    ()          => request('GET',    '/goals/'),
   createGoal:  (data)      => request('POST',   '/goals/', data),
   deleteGoal:  (id)        => request('DELETE', `/goals/${id}`),
+
+  // Notifications
+  getNotifications:  ()          => request('GET',   '/notifications/'),
+  refreshNotifications: ()       => request('POST',  '/notifications/refresh'),
+  markNotificationRead: (id)     => request('PATCH', `/notifications/${id}/read`),
+  markAllNotificationsRead: ()   => request('PATCH', '/notifications/read-all'),
+  deleteNotification: (id)       => request('DELETE', `/notifications/${id}`),
 
   // Backup
   downloadBackup:     () => _triggerDownload(`${API_BASE}/games/backup`),

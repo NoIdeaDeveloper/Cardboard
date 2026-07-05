@@ -4,15 +4,15 @@ import uuid
 from datetime import date, timedelta
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi.responses import FileResponse, JSONResponse, Response
 from sqlalchemy import case, func
 from sqlalchemy.orm import Session
 
 from database import get_db
 import models
 import schemas
-from utils import get_player_or_404, safe_delete_file, safe_write_file, validate_file_extension
+from utils import get_player_or_404, safe_delete_file, safe_write_file, validate_file_extension, strip_image_metadata
 
 logger = logging.getLogger("cardboard.players")
 router = APIRouter(prefix="/api/players", tags=["players"])
@@ -47,6 +47,23 @@ def _build_response(player: models.Player, session_count: int = 0, win_count: in
     r.elo_rating = player.elo_rating
     r.games_played = player.games_played
     return r
+
+
+def _player_counts(db: Session, player_id: int) -> tuple[int, int]:
+    """Return (session_count, win_count) for a player in a single query."""
+    cnt, wins = db.query(
+        func.coalesce(
+            db.query(func.count())
+            .select_from(models.SessionPlayer)
+            .filter(models.SessionPlayer.player_id == player_id)
+            .scalar_subquery(), 0),
+        func.coalesce(
+            db.query(func.count())
+            .select_from(models.PlaySession)
+            .filter(models.PlaySession.winner_player_id == player_id)
+            .scalar_subquery(), 0),
+    ).one()
+    return cnt or 0, wins or 0
 
 
 @router.get("/", response_model=List[schemas.PlayerResponse])
@@ -111,19 +128,8 @@ def rename_player(player_id: int, data: schemas.PlayerUpdate, db: Session = Depe
     db.commit()
     db.refresh(player)
     logger.info("Player renamed: id=%d new_name=%r", player_id, new_name)
-    cnt = (
-        db.query(func.count())
-        .select_from(models.SessionPlayer)
-        .filter(models.SessionPlayer.player_id == player_id)
-        .scalar()
-    )
-    wins = (
-        db.query(func.count())
-        .select_from(models.PlaySession)
-        .filter(models.PlaySession.winner_player_id == player_id)
-        .scalar()
-    )
-    return _build_response(player, cnt or 0, wins or 0)
+    cnt, wins = _player_counts(db, player_id)
+    return _build_response(player, cnt, wins)
 
 
 # ── Avatar endpoints ──────────────────────────────────────────────────────────
@@ -157,6 +163,8 @@ async def upload_player_avatar(
     if len(content) > AVATAR_MAX_BYTES:
         raise HTTPException(status_code=413, detail="Avatar too large (max 5 MB)")
 
+    content = strip_image_metadata(content, ext)
+
     os.makedirs(_avatars_dir(), exist_ok=True)
 
     # Remove old avatar file if it exists and is a different extension
@@ -171,19 +179,8 @@ async def upload_player_avatar(
     db.commit()
 
     logger.info("Avatar uploaded for player id=%d ext=%s", player_id, ext)
-    cnt = (
-        db.query(func.count())
-        .select_from(models.SessionPlayer)
-        .filter(models.SessionPlayer.player_id == player_id)
-        .scalar()
-    )
-    wins = (
-        db.query(func.count())
-        .select_from(models.PlaySession)
-        .filter(models.PlaySession.winner_player_id == player.id)
-        .scalar()
-    )
-    return _build_response(player, cnt or 0, wins or 0)
+    cnt, wins = _player_counts(db, player_id)
+    return _build_response(player, cnt, wins)
 
 
 @router.post("/{player_id}/avatar/preset", response_model=schemas.PlayerResponse)
@@ -202,19 +199,8 @@ def set_player_avatar_preset(
     db.commit()
     db.refresh(player)
     logger.info("Avatar preset set for player id=%d preset=%s", player_id, data.preset)
-    cnt = (
-        db.query(func.count())
-        .select_from(models.SessionPlayer)
-        .filter(models.SessionPlayer.player_id == player_id)
-        .scalar()
-    )
-    wins = (
-        db.query(func.count())
-        .select_from(models.PlaySession)
-        .filter(models.PlaySession.winner_player_id == player.id)
-        .scalar()
-    )
-    return _build_response(player, cnt or 0, wins or 0)
+    cnt, wins = _player_counts(db, player_id)
+    return _build_response(player, cnt, wins)
 
 
 @router.delete("/{player_id}/avatar", status_code=204)
@@ -293,42 +279,70 @@ def get_player_game_rankings(player_id: int, db: Session = Depends(get_db)):
         .distinct()
         .all()
     )
+    game_ids = [r.id for r in game_rows]
+    if not game_ids:
+        return []
+
+    # Batched: all players' scores across all these games, grouped by (game_id, player_id).
+    # Includes avatar columns so _avatar_url(row) works.
+    score_rows = (
+        db.query(
+            models.PlaySession.game_id.label("game_id"),
+            models.Player.id.label("id"),
+            models.Player.name.label("name"),
+            models.Player.elo_rating.label("elo_rating"),
+            models.Player.games_played.label("games_played"),
+            models.Player.avatar_ext.label("avatar_ext"),
+            models.Player.avatar_preset.label("avatar_preset"),
+            func.count(models.SessionPlayer.session_id).label("session_count"),
+            func.avg(models.SessionPlayer.score).label("avg_score"),
+        )
+        .join(models.SessionPlayer, models.SessionPlayer.player_id == models.Player.id)
+        .join(models.PlaySession, models.PlaySession.id == models.SessionPlayer.session_id)
+        .filter(models.PlaySession.game_id.in_(game_ids))
+        .filter(models.SessionPlayer.score.isnot(None))
+        .group_by(
+            models.PlaySession.game_id,
+            models.Player.id,
+            models.Player.name,
+            models.Player.elo_rating,
+            models.Player.games_played,
+            models.Player.avatar_ext,
+            models.Player.avatar_preset,
+        )
+        .all()
+    )
+
+    # Batched: win counts per (game_id, winner_player_id)
+    win_rows = (
+        db.query(
+            models.PlaySession.game_id.label("game_id"),
+            models.PlaySession.winner_player_id.label("player_id"),
+            func.count(models.PlaySession.id).label("wins"),
+        )
+        .filter(
+            models.PlaySession.game_id.in_(game_ids),
+            models.PlaySession.winner_player_id.isnot(None),
+        )
+        .group_by(models.PlaySession.game_id, models.PlaySession.winner_player_id)
+        .all()
+    )
+    wins_by_game_player = {(r.game_id, r.player_id): r.wins for r in win_rows}
+
+    # Group scores by game_id, sort by avg_score desc, find target player's rank
+    scores_by_game: dict[int, list] = {}
+    for row in score_rows:
+        scores_by_game.setdefault(row.game_id, []).append(row)
 
     rankings = []
-    for game_id, game_name in game_rows:
-        # Get all players for this game with scored sessions, ordered by average score
-        player_rows = (
-            db.query(
-                models.Player.id,
-                models.Player.name,
-                models.Player.elo_rating,
-                models.Player.games_played,
-                func.count(models.SessionPlayer.session_id).label("session_count"),
-                func.avg(models.SessionPlayer.score).label("avg_score"),
-            )
-            .join(models.SessionPlayer, models.SessionPlayer.player_id == models.Player.id)
-            .join(models.PlaySession, models.PlaySession.id == models.SessionPlayer.session_id)
-            .filter(models.PlaySession.game_id == game_id)
-            .filter(models.SessionPlayer.score.isnot(None))
-            .group_by(models.Player.id, models.Player.name, models.Player.elo_rating, models.Player.games_played)
-            .order_by(func.avg(models.SessionPlayer.score).desc())
-            .all()
-        )
-
-        win_rows = (
-            db.query(models.PlaySession.winner_player_id.label("id"), func.count(models.PlaySession.id).label("wins"))
-            .filter(
-                models.PlaySession.game_id == game_id,
-                models.PlaySession.winner_player_id.isnot(None),
-            )
-            .group_by(models.PlaySession.winner_player_id)
-            .all()
-        )
-        win_by_id = {r.id: r.wins for r in win_rows}
-
-        for rank, row in enumerate(player_rows, start=1):
+    for game_id in game_ids:
+        game_scores = scores_by_game.get(game_id)
+        if not game_scores:
+            continue
+        game_scores.sort(key=lambda r: float(r.avg_score or 0), reverse=True)
+        for rank, row in enumerate(game_scores, start=1):
             if row.id == player_id:
-                wins = win_by_id.get(row.id, 0)
+                wins = wins_by_game_player.get((game_id, row.id), 0)
                 win_rate = round(wins / row.session_count * 100) if row.session_count > 0 else 0
                 rankings.append(schemas.PlayerRankingResponse(
                     player_id=row.id,
@@ -544,60 +558,77 @@ def get_player_stats(player_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/{player_id}/sessions", response_model=List[schemas.PlayerSessionResponse])
-def get_player_sessions(player_id: int, db: Session = Depends(get_db)):
+def get_player_sessions(
+    player_id: int,
+    db: Session = Depends(get_db),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+):
     get_player_or_404(player_id, db)
 
-    sessions = (
+    base_query = (
         db.query(models.PlaySession)
         .join(models.SessionPlayer, models.SessionPlayer.session_id == models.PlaySession.id)
         .filter(models.SessionPlayer.player_id == player_id)
         .order_by(models.PlaySession.played_at.desc())
-        .all()
     )
-    if not sessions:
-        return []
-
-    session_ids = [s.id for s in sessions]
-    player_rows = (
-        db.query(models.SessionPlayer.session_id, models.Player.name, models.SessionPlayer.score)
-        .join(models.Player, models.Player.id == models.SessionPlayer.player_id)
-        .filter(models.SessionPlayer.session_id.in_(session_ids))
-        .all()
-    )
-    players_by_session: dict = {}
-    scores_by_session: dict = {}
-    for sid, name, score in player_rows:
-        players_by_session.setdefault(sid, []).append(name)
-        if score is not None:
-            scores_by_session.setdefault(sid, {})[name] = score
-
-    game_ids = list({s.game_id for s in sessions})
-    game_rows = db.query(models.Game.id, models.Game.name, models.Game.image_url, models.Game.thumbnail_url).filter(
-        models.Game.id.in_(game_ids)
-    ).all()
-    game_info = {g.id: (g.name, g.image_url or g.thumbnail_url) for g in game_rows}
+    total_count = base_query.count()
+    sessions = base_query.offset(offset).limit(limit).all()
 
     results = []
-    for s in sessions:
-        resp = schemas.PlayerSessionResponse.model_validate(s)
-        resp.players = players_by_session.get(s.id, [])
-        resp.player_scores = scores_by_session.get(s.id, {})
-        title, thumb = game_info.get(s.game_id, ("Unknown Game", None))
-        resp.game_name = title
-        resp.game_thumbnail = thumb
-        results.append(resp)
-    return results
+    if sessions:
+        session_ids = [s.id for s in sessions]
+        player_rows = (
+            db.query(models.SessionPlayer.session_id, models.Player.name, models.SessionPlayer.score)
+            .join(models.Player, models.Player.id == models.SessionPlayer.player_id)
+            .filter(models.SessionPlayer.session_id.in_(session_ids))
+            .all()
+        )
+        players_by_session: dict = {}
+        scores_by_session: dict = {}
+        for sid, name, score in player_rows:
+            players_by_session.setdefault(sid, []).append(name)
+            if score is not None:
+                scores_by_session.setdefault(sid, {})[name] = score
+
+        game_ids = list({s.game_id for s in sessions})
+        game_rows = db.query(models.Game.id, models.Game.name, models.Game.image_url, models.Game.thumbnail_url).filter(
+            models.Game.id.in_(game_ids)
+        ).all()
+        game_info = {g.id: (g.name, g.image_url or g.thumbnail_url) for g in game_rows}
+
+        for s in sessions:
+            resp = schemas.PlayerSessionResponse.model_validate(s)
+            resp.players = players_by_session.get(s.id, [])
+            resp.player_scores = scores_by_session.get(s.id, {})
+            title, thumb = game_info.get(s.game_id, ("Unknown Game", None))
+            resp.game_name = title
+            resp.game_thumbnail = thumb
+            results.append(resp)
+
+    resp = JSONResponse(content=[r.model_dump(mode="json") for r in results])
+    resp.headers["X-Total-Count"] = str(total_count)
+    return resp
 
 
 @router.delete("/{player_id}", status_code=204)
 def delete_player(player_id: int, db: Session = Depends(get_db)):
     player = get_player_or_404(player_id, db)
+    # Scrub the player's name from the free-text `winner` column of past sessions.
+    # `winner` is a denormalized display string (not a FK); without this, a deleted
+    # player's name persists in session history. `winner_player_id` FK cascades to
+    # SET NULL via the model definition, so only the string needs handling.
+    scrubbed = (
+        db.query(models.PlaySession)
+        .filter(models.PlaySession.winner == player.name)
+        .update({"winner": None})
+    )
     # Clean up avatar file before deleting the player record
     if player.avatar_ext:
         safe_delete_file(_avatar_path(player))
     db.delete(player)
     db.commit()
-    logger.info("Player deleted: id=%d", player_id)
+    logger.info("Player deleted: id=%d winner_rows_scrubbed=%d", player_id, scrubbed)
 
 
 # ── Admin / Maintenance ─────────────────────────────────────────────────────

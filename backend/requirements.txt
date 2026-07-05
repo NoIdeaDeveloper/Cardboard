@@ -4,7 +4,7 @@ sqlalchemy==2.0.48
 alembic==1.16.1
 python-multipart==0.0.30
 pydantic==2.12.5
-certifi
+certifi==2026.6.17
 reportlab==4.2.5
 defusedxml==0.7.1
-Pillow>=10.0.0
+Pillow==12.3.0

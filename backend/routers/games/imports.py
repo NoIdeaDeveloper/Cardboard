@@ -41,6 +41,13 @@ async def import_bgg(file: UploadFile = File(...), db: Session = Depends(get_db)
 
     results = {"imported": 0, "skipped": 0, "errors": []}
 
+    # Pre-load existing game names (lowercased) and bgg_ids into Python sets
+    # to avoid per-row ilike/bg_id queries (N+1 fix).
+    existing_names = {r[0].lower() for r in db.query(models.Game.name).all()}
+    existing_bgg_ids = {
+        r[0] for r in db.query(models.Game.bgg_id).filter(models.Game.bgg_id.isnot(None)).all()
+    }
+
     for item in items:
         name = ""
         try:
@@ -54,9 +61,7 @@ async def import_bgg(file: UploadFile = File(...), db: Session = Depends(get_db)
                 continue
 
             # Skip duplicates (case-insensitive by name)
-            if db.query(models.Game).filter(
-                models.Game.name.ilike(name)
-            ).first():
+            if name.lower() in existing_names:
                 results["skipped"] += 1
                 continue
 
@@ -68,7 +73,7 @@ async def import_bgg(file: UploadFile = File(...), db: Session = Depends(get_db)
             except (ValueError, TypeError):
                 pass
 
-            if bgg_id and db.query(models.Game).filter(models.Game.bgg_id == bgg_id).first():
+            if bgg_id and bgg_id in existing_bgg_ids:
                 results["skipped"] += 1
                 continue
 
@@ -150,6 +155,9 @@ async def import_bgg(file: UploadFile = File(...), db: Session = Depends(get_db)
                 image_url=image_url,
             )
             db.add(game)
+            existing_names.add(name.lower())
+            if bgg_id:
+                existing_bgg_ids.add(bgg_id)
             results["imported"] += 1
 
         except (AttributeError, ValueError, TypeError, KeyError, OSError) as exc:
@@ -188,6 +196,15 @@ async def import_bgg_plays(file: UploadFile = File(...), db: Session = Depends(g
     results = {"imported": 0, "skipped": 0, "errors": []}
     affected_game_ids = set()
 
+    # Pre-load all games into dicts keyed by bgg_id and lowercased name (N+1 fix).
+    games_by_bgg_id: dict[int, models.Game] = {}
+    games_by_name: dict[str, models.Game] = {}
+    for g in db.query(models.Game).all():
+        if g.bgg_id is not None:
+            games_by_bgg_id[g.bgg_id] = g
+        if g.name:
+            games_by_name[g.name.lower()] = g
+
     for play in plays:
         game_name = ""
         try:
@@ -199,15 +216,15 @@ async def import_bgg_plays(file: UploadFile = File(...), db: Session = Depends(g
             game_name = (item_el.get("name") or "").strip()
             bgg_object_id = item_el.get("objectid")
 
-            # Match game by bgg_id first, then by name
+            # Match game by bgg_id first, then by name (using pre-loaded dicts)
             game = None
             if bgg_object_id:
                 try:
-                    game = db.query(models.Game).filter(models.Game.bgg_id == int(bgg_object_id)).first()
+                    game = games_by_bgg_id.get(int(bgg_object_id))
                 except (ValueError, TypeError):
                     pass
             if not game and game_name:
-                game = db.query(models.Game).filter(models.Game.name.ilike(game_name)).first()
+                game = games_by_name.get(game_name.lower())
 
             if not game:
                 results["skipped"] += 1
@@ -297,6 +314,9 @@ async def import_csv(file: UploadFile = File(...), db: Session = Depends(get_db)
 
     VALID_STATUSES = {"owned", "wishlist", "sold"}
 
+    # Pre-load existing game names (lowercased) into a Python set (N+1 fix).
+    existing_names = {r[0].lower() for r in db.query(models.Game.name).all()}
+
     for row in reader:
         name = ""
         try:
@@ -305,7 +325,7 @@ async def import_csv(file: UploadFile = File(...), db: Session = Depends(get_db)
                 results["skipped"] += 1
                 continue
 
-            if db.query(models.Game).filter(models.Game.name.ilike(name)).first():
+            if name.lower() in existing_names:
                 results["skipped"] += 1
                 continue
 
@@ -357,6 +377,7 @@ async def import_csv(file: UploadFile = File(...), db: Session = Depends(get_db)
                     _save_tags(game.id, tag_data, db)
 
                 savepoint.commit()
+                existing_names.add(name.lower())
                 results["imported"] += 1
             except Exception:
                 savepoint.rollback()

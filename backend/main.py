@@ -1,18 +1,36 @@
 import logging
 import os
-import secrets
+import re
+import shutil
 import time
 from contextlib import asynccontextmanager
-from fastapi import Depends, FastAPI, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
+from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from database import engine, get_db
-from routers import games, sessions, stats, game_images, players, sharing, goals, settings
+from database import Base, engine, get_db
+from routers import games, sessions, stats, game_images, players, sharing, goals, settings, notifications, maintenance
+
+# Regex patterns for redacting share tokens from logged request paths.
+# Matches /api/share/{token}/games[/{game_id}[/want-to-play]] and /api/share/tokens/{token}
+_SHARE_TOKEN_PATH_RE = re.compile(r"^(/api/share/)([^/]+)(/games.*)$")
+_SHARE_TOKEN_DELETE_RE = re.compile(r"^(/api/share/tokens/)([^/]+)$")
+
+
+def _redact_path(path: str) -> str:
+    """Redact share tokens from /api/share/... paths so they never appear in logs."""
+    m = _SHARE_TOKEN_PATH_RE.match(path)
+    if m:
+        return f"{m.group(1)}***{m.group(3)}"
+    m = _SHARE_TOKEN_DELETE_RE.match(path)
+    if m:
+        return f"{m.group(1)}***"
+    return path
 
 # force=True ensures our format wins even if another library called basicConfig first.
 # PYTHONUNBUFFERED=1 (set in Docker env) makes stdout unbuffered so logs appear immediately.
@@ -54,13 +72,25 @@ async def lifespan(app: FastAPI):
     logger.info("Cardboard shutting down — connections closed")
 
 
-app = FastAPI(title="Cardboard API", version="1.0.0", docs_url="/api/docs", lifespan=lifespan)
+app = FastAPI(
+    title="Cardboard API",
+    version="1.0.0",
+    docs_url="/api/docs" if os.getenv("ENABLE_DOCS", "").lower() in ("1", "true", "yes") else None,
+    redoc_url="/redoc" if os.getenv("ENABLE_DOCS", "").lower() in ("1", "true", "yes") else None,
+    openapi_url="/openapi.json" if os.getenv("ENABLE_DOCS", "").lower() in ("1", "true", "yes") else None,
+    lifespan=lifespan,
+)
 
 
 @app.get("/health", include_in_schema=False)
 def health_check(db: Session = Depends(get_db)):
     db.execute(text("SELECT 1"))
     return {"status": "ok"}
+
+
+@app.get("/robots.txt", include_in_schema=False, response_class=PlainTextResponse)
+def robots_txt():
+    return "User-agent: *\nDisallow: /\n"
 
 _raw_origins = os.getenv("ALLOWED_ORIGINS", "").split(",")
 _ALLOWED_ORIGINS = [o.strip() for o in _raw_origins if o.strip()]
@@ -80,7 +110,7 @@ app.add_middleware(
 
 @app.exception_handler(Exception)
 async def _unhandled_exception(request: Request, exc: Exception):
-    logger.exception("Unhandled exception on %s %s", request.method, request.url.path)
+    logger.exception("Unhandled exception on %s %s", request.method, _redact_path(request.url.path))
     return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
 
@@ -90,17 +120,17 @@ async def add_security_headers(request: Request, call_next):
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-    nonce = secrets.token_urlsafe(16)
+    response.headers["X-Robots-Tag"] = "noindex, nofollow"
+    response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains"
     response.headers["Content-Security-Policy"] = (
         "default-src 'self'; "
-        f"script-src 'self' 'nonce-{nonce}'; "
+        "script-src 'self'; "
         "style-src 'self' 'unsafe-inline'; "
         "img-src 'self' data: blob: https:; "
         "connect-src 'self'; "
         "font-src 'self'; "
         "object-src 'none';"
     )
-    response.headers["X-CSP-Nonce"] = nonce
     return response
 
 
@@ -114,7 +144,7 @@ async def log_requests(request: Request, call_next):
         logger.info(
             "%s %s -> %d (%.1f ms)",
             request.method,
-            request.url.path,
+            _redact_path(request.url.path),
             response.status_code,
             elapsed_ms,
         )
@@ -129,6 +159,51 @@ app.include_router(players.router)
 app.include_router(sharing.router)
 app.include_router(goals.router)
 app.include_router(settings.router)
+app.include_router(notifications.router)
+app.include_router(maintenance.router)
+
+
+class WipeConfirm(BaseModel):
+    confirm: str
+
+
+_MEDIA_SUBDIRS = ["images", "instructions", "gallery", "avatars"]
+
+
+@app.delete("/api/everything", status_code=200)
+def wipe_all_data(body: WipeConfirm, db: Session = Depends(get_db)):
+    """Factory-reset endpoint: drop all rows from every table and delete all media files.
+
+    Requires a confirmation payload ``{"confirm": "DELETE EVERYTHING"}`` to prevent
+    accidental triggers. Documented under "Uninstall" in the README.
+    """
+    if body.confirm != "DELETE EVERYTHING":
+        raise HTTPException(status_code=400, detail="Confirmation string mismatch")
+
+    # Delete all rows in FK-safe order (children first, parents last).
+    tables = list(reversed(Base.metadata.sorted_tables))
+    tables_cleared = 0
+    for table in tables:
+        db.execute(table.delete())
+        tables_cleared += 1
+    db.commit()
+
+    # Delete media files from each subdir, then recreate empty dirs.
+    data_dir = os.getenv("DATA_DIR", "/app/data")
+    media_dirs_cleared = 0
+    for subdir in _MEDIA_SUBDIRS:
+        dir_path = os.path.join(data_dir, subdir)
+        if os.path.isdir(dir_path):
+            shutil.rmtree(dir_path)
+        os.makedirs(dir_path, exist_ok=True)
+        media_dirs_cleared += 1
+
+    logger.warning("Factory reset completed: %d tables cleared, %d media dirs wiped", tables_cleared, media_dirs_cleared)
+    return {
+        "message": "All data wiped",
+        "tables_cleared": tables_cleared,
+        "media_dirs_cleared": media_dirs_cleared,
+    }
 
 # Serve frontend static files
 FRONTEND_PATH = os.getenv("FRONTEND_PATH", "/app/frontend")

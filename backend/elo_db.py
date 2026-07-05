@@ -135,12 +135,15 @@ def recalculate_elo_for_players(player_ids: Set[int], db: Session) -> None:
     if not player_ids:
         return
 
-    # Fetch all scored sessions that involve any of these players, ordered chronologically
+    # Fetch all scored, non-cooperative sessions that involve any of these players,
+    # ordered chronologically. Co-op sessions have no competitive winner/loser
+    # dynamic and are excluded from Elo.
     sessions = (
         db.query(models.PlaySession)
         .join(models.SessionPlayer, models.SessionPlayer.session_id == models.PlaySession.id)
         .filter(models.SessionPlayer.player_id.in_(list(player_ids)))
         .filter(models.SessionPlayer.score.isnot(None))
+        .filter(models.PlaySession.cooperative == False)  # noqa: E712
         .order_by(models.PlaySession.played_at.asc(), models.PlaySession.id.asc())
         .all()
     )

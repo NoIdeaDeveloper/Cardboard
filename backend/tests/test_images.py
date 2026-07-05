@@ -1,6 +1,9 @@
 """Tests for image upload, gallery, and reorder endpoints."""
 import io
+import os
 import pytest
+
+from PIL import Image, ExifTags
 
 # Minimal valid JPEG (1x1 pixel, white)
 _TINY_JPEG = (
@@ -15,6 +18,31 @@ _TINY_JPEG = (
     b"\x04\x00\x00\x01}\x01\x02\x03\x00\x04\x11\x05\x12!1A\x06\x13Qa"
     b"\xff\xda\x00\x08\x01\x01\x00\x00?\x00\xfb\xd2\x8a(\x03\xff\xd9"
 )
+
+
+def _make_jpeg_with_exif() -> bytes:
+    """Create a 4x4 JPEG with EXIF metadata (ImageDescription, Make, Software)."""
+    img = Image.new("RGB", (4, 4), (255, 0, 0))
+    exif = img.getexif()
+    exif[0x010e] = "Private description"      # ImageDescription
+    exif[0x0131] = "Test Phone"                # Make
+    exif[0x013b] = "Photographer Name"         # Artist
+    exif[0x0131] = "Test Camera Co"            # Make
+    buf = io.BytesIO()
+    img.save(buf, "JPEG", exif=exif.tobytes())
+    return buf.getvalue()
+
+
+def _make_png_with_metadata() -> bytes:
+    """Create a 4x4 PNG with text metadata chunks."""
+    from PIL.PngImagePlugin import PngInfo
+    img = Image.new("RGB", (4, 4), (0, 255, 0))
+    meta = PngInfo()
+    meta.add_text("Comment", "Private location data")
+    meta.add_text("GPS", "37.7749,-122.4194")
+    buf = io.BytesIO()
+    img.save(buf, "PNG", pnginfo=meta)
+    return buf.getvalue()
 
 
 def _make_game(client, name="Gallery Game"):
@@ -142,3 +170,105 @@ def test_gallery_reorder_wrong_ids(client):
 
     r = client.patch(f"/api/games/{gid}/images/reorder", json={"order": [id1, 99999]})
     assert r.status_code == 400
+
+
+# ---------------------------------------------------------------------------
+# EXIF / metadata stripping
+# ---------------------------------------------------------------------------
+
+def test_strip_image_metadata_helper_strips_jpeg_exif():
+    """Unit test: the helper strips EXIF (incl. GPS) from JPEG bytes."""
+    from utils import strip_image_metadata
+    original = _make_jpeg_with_exif()
+    # Sanity: original has EXIF
+    img_before = Image.open(io.BytesIO(original))
+    exif_before = img_before.getexif()
+    assert exif_before, "test image should have EXIF before stripping"
+    assert exif_before.get(0x010e) == "Private description"
+    # Strip
+    stripped = strip_image_metadata(original, ".jpg")
+    img_after = Image.open(io.BytesIO(stripped))
+    exif_after = img_after.getexif()
+    assert not exif_after, "EXIF should be stripped"
+    assert exif_after.get(0x010e) is None, "ImageDescription should be gone"
+    assert exif_after.get(0x013b) is None, "Artist should be gone"
+
+
+def test_strip_image_metadata_helper_strips_png_metadata():
+    """Unit test: the helper strips text metadata from PNG bytes."""
+    from utils import strip_image_metadata
+    original = _make_png_with_metadata()
+    # Sanity: original has text metadata
+    img_before = Image.open(io.BytesIO(original))
+    assert img_before.text.get("Comment") == "Private location data"
+    # Strip
+    stripped = strip_image_metadata(original, ".png")
+    img_after = Image.open(io.BytesIO(stripped))
+    assert not img_after.text, "PNG text metadata should be stripped"
+
+
+def test_strip_image_metadata_preserves_gif():
+    """Unit test: GIF is passed through unchanged (preserves animation)."""
+    from utils import strip_image_metadata
+    img = Image.new("RGB", (4, 4), (0, 0, 255))
+    buf = io.BytesIO()
+    img.save(buf, "GIF")
+    original = buf.getvalue()
+    stripped = strip_image_metadata(original, ".gif")
+    assert stripped == original, "GIF should pass through unchanged"
+
+
+def test_gallery_upload_strips_exif(client):
+    """Integration test: uploaded gallery image has EXIF stripped on disk."""
+    gid = _make_game(client)
+    jpeg_with_exif = _make_jpeg_with_exif()
+    r = _upload_gallery(client, gid, content=jpeg_with_exif, filename="phone.jpg")
+    assert r.status_code == 201
+    img_id = r.json()["id"]
+    # Fetch the stored image back
+    r = client.get(f"/api/games/{gid}/images/{img_id}/file")
+    assert r.status_code == 200
+    stored = Image.open(io.BytesIO(r.content))
+    assert not stored.getexif(), "stored gallery image should have no EXIF"
+
+
+def test_cover_upload_strips_exif(client):
+    """Integration test: uploaded cover image has EXIF stripped on disk."""
+    gid = _make_game(client)
+    jpeg_with_exif = _make_jpeg_with_exif()
+    r = _upload_cover(client, gid, content=jpeg_with_exif, filename="cover.jpg")
+    assert r.status_code == 204
+    # Fetch the stored image back
+    r = client.get(f"/api/games/{gid}/image")
+    assert r.status_code == 200
+    stored = Image.open(io.BytesIO(r.content))
+    assert not stored.getexif(), "stored cover image should have no EXIF"
+
+
+def test_avatar_upload_strips_exif(client):
+    """Integration test: uploaded avatar has EXIF stripped on disk."""
+    from tests.test_players import _make_player
+    pid = _make_player(client, "PhotoFace")
+    jpeg_with_exif = _make_jpeg_with_exif()
+    r = client.post(
+        f"/api/players/{pid}/avatar",
+        files={"file": ("avatar.jpg", io.BytesIO(jpeg_with_exif), "image/jpeg")},
+    )
+    assert r.status_code == 200
+    # Fetch the stored avatar back
+    r = client.get(f"/api/players/{pid}/avatar")
+    assert r.status_code == 200
+    stored = Image.open(io.BytesIO(r.content))
+    assert not stored.getexif(), "stored avatar should have no EXIF"
+
+
+# ---------------------------------------------------------------------------
+# Decompression-bomb ceiling (S-M3)
+# ---------------------------------------------------------------------------
+
+def test_pillow_max_image_pixels_is_capped():
+    """Pillow's MAX_IMAGE_PIXELS must be set below the default to mitigate DoS."""
+    import utils  # ensures the module-level setting is applied
+    from PIL import Image
+    assert Image.MAX_IMAGE_PIXELS is not None
+    assert Image.MAX_IMAGE_PIXELS < 89_478_485  # Pillow's default

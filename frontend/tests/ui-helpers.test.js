@@ -58,10 +58,11 @@ describe('formatDatetime', () => {
 });
 
 describe('isSafeUrl', () => {
-  it('accepts api-relative and http(s) URLs', () => {
+  it('accepts api-relative and https URLs', () => {
     expect(isSafeUrl('/api/games/1/image')).toBe(true);
     expect(isSafeUrl('https://example.com/x.jpg')).toBe(true);
-    expect(isSafeUrl('http://example.com/x.jpg')).toBe(true);
+    // http:// is rejected because CSP img-src is https-only
+    expect(isSafeUrl('http://example.com/x.jpg')).toBe(false);
   });
   it('rejects empty and non-http schemes', () => {
     expect(isSafeUrl('')).toBe(false);
@@ -90,6 +91,11 @@ describe('cardMediaHtml', () => {
     const html = cardMediaHtml({ name: 'Catan', image_url: 'https://x/c.jpg' });
     expect(html).toContain('<img');
     expect(html).toContain('https://x/c.jpg');
+  });
+  it('does not use an inline onerror handler (CSP-compliant)', () => {
+    const html = cardMediaHtml({ name: 'Catan', image_url: 'https://x/c.jpg' });
+    expect(html).not.toContain('onerror');
+    expect(html).toContain('data-fallback');
   });
   it('falls back to the placeholder svg when the URL is unsafe/missing', () => {
     expect(cardMediaHtml({ name: 'X' })).toContain('placeholder-icon');

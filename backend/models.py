@@ -71,7 +71,7 @@ class PlaySession(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     game_id = Column(Integer, ForeignKey("games.id", ondelete="CASCADE"), nullable=False, index=True)
-    played_at = Column(Date, nullable=False)
+    played_at = Column(Date, nullable=False, index=True)
     player_count = Column(Integer, nullable=True)
     duration_minutes = Column(Integer, nullable=True)
     notes = Column(Text, nullable=True)
@@ -79,6 +79,9 @@ class PlaySession(Base):
     winner = Column(String(255), nullable=True)
     winner_player_id = Column(Integer, ForeignKey("players.id", ondelete="SET NULL"), nullable=True, index=True)
     solo = Column(Boolean, default=False, nullable=False)
+    cooperative = Column(Boolean, default=False, nullable=False)
+    outcome = Column(String(20), nullable=True)   # win | loss | draw | incomplete (co-op only)
+    scenario = Column(String(255), nullable=True)  # scenario/campaign name (co-op only)
     date_added = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
 
     winner_player = relationship("Player", foreign_keys=[winner_player_id], lazy="joined")
@@ -104,7 +107,7 @@ class SessionPlayer(Base):
     __tablename__ = "session_players"
 
     session_id = Column(Integer, ForeignKey("play_sessions.id", ondelete="CASCADE"), primary_key=True)
-    player_id = Column(Integer, ForeignKey("players.id", ondelete="CASCADE"), primary_key=True)
+    player_id = Column(Integer, ForeignKey("players.id", ondelete="CASCADE"), primary_key=True, index=True)
     score = Column(Integer, nullable=True)
 
 
@@ -148,6 +151,7 @@ class WantToPlayRequest(Base):
     token = Column(String(64), nullable=False, index=True)
     game_id = Column(Integer, ForeignKey("games.id", ondelete="CASCADE"), nullable=False, index=True)
     visitor_name = Column(String(100), nullable=True)
+    visitor_ip = Column(String(64), nullable=True)
     message = Column(String(500), nullable=True)
     seen = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
@@ -164,7 +168,7 @@ class Category(Base):
 class GameCategory(Base):
     __tablename__ = "game_categories"
     game_id = Column(Integer, ForeignKey("games.id", ondelete="CASCADE"), primary_key=True)
-    category_id = Column(Integer, ForeignKey("categories.id", ondelete="CASCADE"), primary_key=True)
+    category_id = Column(Integer, ForeignKey("categories.id", ondelete="CASCADE"), primary_key=True, index=True)
 
 
 class Mechanic(Base):
@@ -175,7 +179,7 @@ class Mechanic(Base):
 class GameMechanic(Base):
     __tablename__ = "game_mechanics"
     game_id = Column(Integer, ForeignKey("games.id", ondelete="CASCADE"), primary_key=True)
-    mechanic_id = Column(Integer, ForeignKey("mechanics.id", ondelete="CASCADE"), primary_key=True)
+    mechanic_id = Column(Integer, ForeignKey("mechanics.id", ondelete="CASCADE"), primary_key=True, index=True)
 
 
 class Designer(Base):
@@ -186,7 +190,7 @@ class Designer(Base):
 class GameDesigner(Base):
     __tablename__ = "game_designers"
     game_id = Column(Integer, ForeignKey("games.id", ondelete="CASCADE"), primary_key=True)
-    designer_id = Column(Integer, ForeignKey("designers.id", ondelete="CASCADE"), primary_key=True)
+    designer_id = Column(Integer, ForeignKey("designers.id", ondelete="CASCADE"), primary_key=True, index=True)
 
 
 class Publisher(Base):
@@ -197,7 +201,7 @@ class Publisher(Base):
 class GamePublisher(Base):
     __tablename__ = "game_publishers"
     game_id = Column(Integer, ForeignKey("games.id", ondelete="CASCADE"), primary_key=True)
-    publisher_id = Column(Integer, ForeignKey("publishers.id", ondelete="CASCADE"), primary_key=True)
+    publisher_id = Column(Integer, ForeignKey("publishers.id", ondelete="CASCADE"), primary_key=True, index=True)
 
 
 class Label(Base):
@@ -208,7 +212,7 @@ class Label(Base):
 class GameLabel(Base):
     __tablename__ = "game_labels"
     game_id = Column(Integer, ForeignKey("games.id", ondelete="CASCADE"), primary_key=True)
-    label_id = Column(Integer, ForeignKey("labels.id", ondelete="CASCADE"), primary_key=True)
+    label_id = Column(Integer, ForeignKey("labels.id", ondelete="CASCADE"), primary_key=True, index=True)
 
 
 class UserSetting(Base):
@@ -216,3 +220,29 @@ class UserSetting(Base):
 
     key = Column(String(255), primary_key=True)
     value = Column(Text, nullable=False, default="")
+
+
+class Notification(Base):
+    __tablename__ = "notifications"
+
+    id = Column(Integer, primary_key=True, index=True)
+    kind = Column(String(50), nullable=False)      # dormant_favorite | unplayed_owned | goal_progress | stale_collection | streak_risk | loan_overdue
+    title = Column(String(255), nullable=False)
+    body = Column(Text, nullable=True)
+    action_url = Column(String(500), nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    read_at = Column(DateTime, nullable=True)
+    # Dedup key: one notification per kind+action_url (prevents duplicates on refresh)
+    dedup_key = Column(String(500), nullable=True, index=True)
+
+
+class MaintenanceLog(Base):
+    __tablename__ = "maintenance_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    game_id = Column(Integer, ForeignKey("games.id", ondelete="CASCADE"), nullable=False, index=True)
+    kind = Column(String(20), nullable=False)       # missing_piece | sleeve | damage | other
+    description = Column(Text, nullable=False)
+    status = Column(String(10), default="open", nullable=False)  # open | resolved
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    resolved_at = Column(DateTime, nullable=True)

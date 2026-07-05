@@ -46,9 +46,10 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD curl -f http://localhost:8000/health || exit 1
 
 # Run migrations then start the server
+# --access-log is omitted: the app's log_requests middleware handles API logging
+# with share-token redaction. Uvicorn's access log would log unredacted tokens.
 CMD alembic upgrade head && \
     uvicorn main:app \
       --host 0.0.0.0 \
       --port 8000 \
-      --log-level info \
-      --access-log
+      --log-level info

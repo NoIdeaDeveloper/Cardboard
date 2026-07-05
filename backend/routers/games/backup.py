@@ -13,7 +13,7 @@ import tempfile
 import zipfile
 from datetime import date as _date, datetime, timezone
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, Response
 from sqlalchemy.orm import Session
 
@@ -176,21 +176,21 @@ def export_static_html(db: Session = Depends(get_db)):
     """
     # ── 1. Query games ────────────────────────────────────────────────────────
     games = db.query(models.Game).filter(models.Game.share_hidden == False).all()
-    results = build_game_responses(games, db)
+    results = build_game_responses(games, db, response_cls=schemas.GameShareResponse)
     games_json = [r.model_dump(mode="json") for r in results]
 
     _MIME_MAP = {'.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
                  '.png': 'image/png', '.gif': 'image/gif', '.webp': 'image/webp'}
 
-    for game_data in games_json:
+    for game, game_data in zip(games, games_json):
         game_id = game_data.get('id')
-        if game_data.get('image_cached') and game_data.get('image_ext'):
-            image_path = os.path.join(IMAGES_DIR, f"{game_id}{game_data['image_ext']}")
+        if game.image_cached and game.image_ext:
+            image_path = os.path.join(IMAGES_DIR, f"{game_id}{game.image_ext}")
             if os.path.isfile(image_path):
                 try:
                     with open(image_path, 'rb') as fh:
                         b64 = base64.b64encode(fh.read()).decode('ascii')
-                    mime = _MIME_MAP.get(game_data['image_ext'].lower(), 'image/jpeg')
+                    mime = _MIME_MAP.get(game.image_ext.lower(), 'image/jpeg')
                     game_data['image_url'] = f"data:{mime};base64,{b64}"
                 except Exception as exc:
                     logger.warning("Failed to embed image for game %s: %s", game_id, exc)
@@ -200,9 +200,6 @@ def export_static_html(db: Session = Depends(get_db)):
         # Any remaining /api/ URL is a server-relative path that won't work offline
         elif (game_data.get('image_url') or '').startswith('/api/'):
             game_data['image_url'] = None
-        game_data.pop('image_cached', None)
-        game_data.pop('image_ext', None)
-        game_data.pop('image_cache_status', None)
 
     # ── 2. Read share.html template ───────────────────────────────────────────
     share_html_path = os.path.join(FRONTEND_PATH, "share.html")
@@ -546,17 +543,26 @@ def export_json(db: Session = Depends(get_db)):
         },
     )
 
+_CSV_PUBLIC_FIELDS = ["name", "status", "year_published", "min_players", "max_players",
+                      "min_playtime", "max_playtime", "difficulty", "user_rating",
+                      "bgg_id", "bgg_rating", "last_played",
+                      "categories", "mechanics", "designers", "publishers", "labels"]
+_CSV_PRIVATE_FIELDS = ["purchase_price", "purchase_date", "purchase_location",
+                       "location", "condition", "edition", "user_notes"]
+
 @router.get("/export/csv")
-def export_csv(db: Session = Depends(get_db)):
-    """Export the full collection as a CSV download."""
+def export_csv(include_private: bool = Query(False), db: Session = Depends(get_db)):
+    """Export the full collection as a CSV download.
+
+    By default, private fields (purchase price/location, storage location,
+    condition, edition, personal notes) are excluded. Pass ``include_private=true``
+    to include them — intended for insurance/backup use cases.
+    """
     games = db.query(models.Game).all()
     results = build_game_responses(games, db)
-    fields = ["name", "status", "year_published", "min_players", "max_players",
-              "min_playtime", "max_playtime", "difficulty", "user_rating",
-              "bgg_id", "bgg_rating", "purchase_price", "purchase_date",
-              "purchase_location", "location", "condition", "edition",
-              "last_played", "categories", "mechanics", "designers",
-              "publishers", "labels", "user_notes"]
+    fields = list(_CSV_PUBLIC_FIELDS)
+    if include_private:
+        fields = fields + list(_CSV_PRIVATE_FIELDS)
     buf = io.StringIO()
     writer = csv.DictWriter(buf, fieldnames=fields, extrasaction='ignore')
     writer.writeheader()
@@ -649,8 +655,44 @@ async def _stream_backup_to_tempfile(file: UploadFile, suffix: str = ".zip", dir
     tmp.close()
     return tmp
 
+def _validate_db_schema(conn: sqlite3.Connection):
+    """Verify the backup DB has all tables and columns the app expects.
+
+    Introspects models.Base.metadata so the check stays in sync with the
+    current schema.  Rejects backups from incompatible (e.g. older) versions
+    before they can be swapped in and break the running app.
+    """
+    required: dict[str, set[str]] = {}
+    for table_name, table in models.Base.metadata.tables.items():
+        required[table_name] = {col.name for col in table.columns}
+
+    existing_tables = {
+        row[0] for row in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+        ).fetchall()
+    }
+
+    missing_tables = set(required) - existing_tables
+    if missing_tables:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Backup schema mismatch: missing tables {sorted(missing_tables)}. "
+                   "The backup may be from an incompatible version.",
+        )
+
+    for table_name, required_cols in required.items():
+        actual_cols = {row[1] for row in conn.execute(f"PRAGMA table_info('{table_name}')").fetchall()}
+        missing_cols = required_cols - actual_cols
+        if missing_cols:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Backup schema mismatch: table '{table_name}' missing columns {sorted(missing_cols)}. "
+                       "The backup may be from an incompatible version.",
+            )
+
+
 def _extract_and_validate_db(zf: zipfile.ZipFile, tmp_zip_name: str, db_suffix: str) -> tuple[sqlite3.Connection, str]:
-    """Extract cardboard.db from a ZIP and return an open, integrity-checked connection."""
+    """Extract cardboard.db from a ZIP and return an open, integrity- and schema-checked connection."""
     if "cardboard.db" not in zf.namelist():
         raise HTTPException(status_code=422, detail="Invalid backup: cardboard.db not found in ZIP")
     db_tmp = tmp_zip_name + db_suffix
@@ -669,6 +711,7 @@ def _extract_and_validate_db(zf: zipfile.ZipFile, tmp_zip_name: str, db_suffix: 
         integrity = conn.execute("PRAGMA integrity_check").fetchone()
         if not integrity or integrity[0] != "ok":
             raise HTTPException(status_code=422, detail="Backup database failed integrity check")
+        _validate_db_schema(conn)
     except HTTPException:
         conn.close()
         safe_delete_file(db_tmp)

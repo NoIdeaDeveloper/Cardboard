@@ -184,3 +184,82 @@ def test_update_session_notes_and_winner(client):
     data = r.json()
     assert data["notes"] == "great game"
     assert data["winner"] == "Alice"
+
+
+# ---------------------------------------------------------------------------
+# Cooperative sessions
+# ---------------------------------------------------------------------------
+
+def test_add_cooperative_session(client):
+    gid = _make_game(client)
+    r = _add_session(client, gid, cooperative=True, outcome="win", scenario="Scenario 3")
+    assert r.status_code == 201
+    data = r.json()
+    assert data["cooperative"] is True
+    assert data["outcome"] == "win"
+    assert data["scenario"] == "Scenario 3"
+
+
+def test_cooperative_session_clears_winner(client):
+    gid = _make_game(client)
+    r = _add_session(client, gid, cooperative=True, winner="Alice", outcome="win")
+    assert r.status_code == 201
+    data = r.json()
+    assert data["cooperative"] is True
+    assert data["winner"] is None
+
+
+def test_cooperative_session_invalid_outcome(client):
+    gid = _make_game(client)
+    r = _add_session(client, gid, cooperative=True, outcome="victory")
+    assert r.status_code == 422
+
+
+def test_cooperative_session_skips_elo(client, db):
+    import models
+    gid = _make_game(client)
+    # Create players first
+    client.post("/api/players/", json={"name": "Alice"})
+    client.post("/api/players/", json={"name": "Bob"})
+    # Co-op session with scores — Elo should NOT be applied
+    r = _add_session(client, gid, cooperative=True, outcome="win",
+                     player_names=["Alice", "Bob"], scores={"Alice": 10, "Bob": 10})
+    assert r.status_code == 201
+    # Check that Elo ratings are still default (1500)
+    alice = db.query(models.Player).filter(models.Player.name == "Alice").first()
+    bob = db.query(models.Player).filter(models.Player.name == "Bob").first()
+    assert alice.elo_rating == 1500.0
+    assert bob.elo_rating == 1500.0
+    assert alice.games_played == 0
+    assert bob.games_played == 0
+
+
+def test_update_session_to_cooperative_clears_winner(client):
+    gid = _make_game(client)
+    session_id = _add_session(client, gid, winner="Alice").json()["id"]
+    r = client.patch(f"/api/sessions/{session_id}", json={"cooperative": True, "outcome": "loss"})
+    assert r.status_code == 200
+    data = r.json()
+    assert data["cooperative"] is True
+    assert data["winner"] is None
+    assert data["outcome"] == "loss"
+
+
+def test_bulk_session_cooperative(client):
+    g1 = _make_game(client, "Game 1")
+    g2 = _make_game(client, "Game 2")
+    r = client.post("/api/sessions/bulk", json={
+        "game_ids": [g1, g2],
+        "played_at": "2024-07-01",
+        "cooperative": True,
+        "outcome": "win",
+        "scenario": "Campaign Ch.1",
+    })
+    assert r.status_code == 201
+    sessions = r.json()
+    assert len(sessions) == 2
+    for s in sessions:
+        assert s["cooperative"] is True
+        assert s["outcome"] == "win"
+        assert s["scenario"] == "Campaign Ch.1"
+        assert s["winner"] is None

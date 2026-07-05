@@ -16,6 +16,8 @@ if "sqlite" in DATABASE_URL:
         cursor.execute("PRAGMA journal_mode=WAL")
         cursor.execute("PRAGMA synchronous=NORMAL")
         cursor.execute("PRAGMA cache_size=-32000")
+        cursor.execute("PRAGMA temp_store=MEMORY")
+        cursor.execute("PRAGMA mmap_size=268435456")
         cursor.execute("PRAGMA wal_autocheckpoint=1000")
         cursor.execute("PRAGMA busy_timeout=5000")
         cursor.close()

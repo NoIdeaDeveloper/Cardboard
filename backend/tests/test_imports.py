@@ -333,3 +333,25 @@ def test_bgg_rate_limiter_returns_429_after_limit(client):
         assert r.status_code == 429, f"Expected 429, got {r.status_code}: {r.text}"
     finally:
         _gmod._bgg_buckets.clear()
+
+
+# ---------------------------------------------------------------------------
+# N+1 fix: within-import duplicate detection
+# ---------------------------------------------------------------------------
+
+def test_csv_import_skips_within_import_duplicates(client):
+    """Two rows with the same name in one import: second is skipped."""
+    csv_text = "name,status\nCatan,owned\nCatan,owned\n"
+    r = _csv_upload(client, csv_text)
+    data = r.json()
+    assert data["imported"] == 1
+    assert data["skipped"] == 1
+
+
+def test_csv_import_case_insensitive_within_import(client):
+    """Duplicate detection within a single import is case-insensitive."""
+    csv_text = "name,status\nCatan,owned\ncatan,owned\nCATAN,owned\n"
+    r = _csv_upload(client, csv_text)
+    data = r.json()
+    assert data["imported"] == 1
+    assert data["skipped"] == 2

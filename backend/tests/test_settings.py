@@ -1,6 +1,8 @@
 """
 Tests for user settings key-value store endpoints.
 """
+import logging
+
 import pytest
 
 
@@ -73,3 +75,15 @@ def test_get_setting_key_isolation(client):
     client.put("/api/settings/key_b", json={"value": "beta"})
     assert client.get("/api/settings/key_a").json()["value"] == "alpha"
     assert client.get("/api/settings/key_b").json()["value"] == "beta"
+
+
+def test_put_setting_does_not_log_value(client, caplog):
+    """Setting values must not be logged verbatim — only key and length."""
+    secret_value = "super-secret-token-do-not-log"
+    with caplog.at_level(logging.INFO, logger="cardboard.settings"):
+        client.put("/api/settings/api_key", json={"value": secret_value})
+    # The key may appear in logs, the value must not.
+    logged = " ".join(r.getMessage() for r in caplog.records)
+    assert "api_key" in logged
+    assert secret_value not in logged
+    assert f"len={len(secret_value)}" in logged

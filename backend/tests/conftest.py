@@ -26,7 +26,7 @@ os.environ.setdefault("LOG_LEVEL", "WARNING")  # quiet during tests
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, event, StaticPool
+from sqlalchemy import create_engine, event, StaticPool, text as sa_text
 from sqlalchemy.orm import sessionmaker
 
 from database import Base, get_db
@@ -48,6 +48,38 @@ def _set_sqlite_pragmas(dbapi_conn, connection_record):
     cursor.close()
 
 Base.metadata.create_all(bind=_engine)
+
+# Create FTS5 virtual table + triggers for game name search (mirrors migration 0018).
+# Base.metadata.create_all() can't create FTS5 virtual tables, so we do it manually.
+with _engine.connect() as _fts_conn:
+    _fts_conn.execute(
+        sa_text(
+            "CREATE VIRTUAL TABLE IF NOT EXISTS games_fts USING fts5("
+            "name, content='games', content_rowid='id', "
+            "tokenize='porter unicode61')"
+        )
+    )
+    _fts_conn.execute(
+        sa_text(
+            "CREATE TRIGGER IF NOT EXISTS games_fts_ai AFTER INSERT ON games BEGIN "
+            "INSERT INTO games_fts(rowid, name) VALUES (new.id, new.name); END"
+        )
+    )
+    _fts_conn.execute(
+        sa_text(
+            "CREATE TRIGGER IF NOT EXISTS games_fts_ad AFTER DELETE ON games BEGIN "
+            "INSERT INTO games_fts(games_fts, rowid, name) VALUES ('delete', old.id, old.name); END"
+        )
+    )
+    _fts_conn.execute(
+        sa_text(
+            "CREATE TRIGGER IF NOT EXISTS games_fts_au AFTER UPDATE ON games BEGIN "
+            "INSERT INTO games_fts(games_fts, rowid, name) VALUES ('delete', old.id, old.name); "
+            "INSERT INTO games_fts(rowid, name) VALUES (new.id, new.name); END"
+        )
+    )
+    _fts_conn.commit()
+
 _TestingSession = sessionmaker(autocommit=False, autoflush=False, bind=_engine)
 
 

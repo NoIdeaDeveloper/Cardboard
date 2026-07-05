@@ -172,3 +172,53 @@ def test_stats_total_expansions(client):
 
     r = client.get("/api/stats/")
     assert r.json()["total_expansions"] == 2
+
+
+# ---------------------------------------------------------------------------
+# TTL cache
+# ---------------------------------------------------------------------------
+
+def test_stats_cache_hit_on_second_request(client):
+    """Second request with no data change should be a cache HIT."""
+    gid = _make_game(client, name="Cached Game")
+    _add_session(client, gid, duration_minutes=30)
+
+    r1 = client.get("/api/stats/")
+    assert r1.status_code == 200
+    assert r1.headers.get("X-Stats-Cache") == "MISS"
+
+    r2 = client.get("/api/stats/")
+    assert r2.status_code == 200
+    assert r2.headers.get("X-Stats-Cache") == "HIT"
+    # Same ETag and same body
+    assert r2.headers["ETag"] == r1.headers["ETag"]
+    assert r2.json() == r1.json()
+
+
+def test_stats_cache_invalidates_on_data_change(client):
+    """After adding a game, the cache should miss (ETag changes)."""
+    _make_game(client, name="Game A")
+
+    r1 = client.get("/api/stats/")
+    assert r1.headers.get("X-Stats-Cache") == "MISS"
+
+    # Second request — cache hit
+    r2 = client.get("/api/stats/")
+    assert r2.headers.get("X-Stats-Cache") == "HIT"
+
+    # Add a game — ETag changes
+    _make_game(client, name="Game B")
+
+    r3 = client.get("/api/stats/")
+    assert r3.headers.get("X-Stats-Cache") == "MISS"
+    assert r3.json()["total_games"] == 2
+
+
+def test_stats_cache_304_when_etag_matches(client):
+    """If-None-Match matching the ETag returns 304 before cache is checked."""
+    _make_game(client, name="ETag Game")
+    r1 = client.get("/api/stats/")
+    etag = r1.headers["ETag"]
+
+    r2 = client.get("/api/stats/", headers={"If-None-Match": etag})
+    assert r2.status_code == 304

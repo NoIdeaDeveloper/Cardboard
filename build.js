@@ -74,10 +74,12 @@ async function main() {
              `  <script src="js/${jsFile}"></script>\n  <script src="js/${appFile}"></script>`);
   fs.writeFileSync(path.join(DIST, 'index.html'), html);
 
-  // Patch sw.js: bump cache name (forces old SWs to re-fetch) and update shell assets
+  // Patch sw.js: bump cache names (forces old SWs to re-fetch) and update shell assets.
+  // Both the shell cache and the API cache are hashed so deploys evict stale data.
   let sw = fs.readFileSync(path.join(SRC, 'sw.js'), 'utf8');
   sw = sw
     .replace("'cardboard-v2'", `'cardboard-${jsHash}${appHash}'`)
+    .replace("'cardboard-api-v1'", `'cardboard-api-${jsHash}${appHash}'`)
     .replace(
       /const SHELL_ASSETS = \[[\s\S]*?\];/,
       `const SHELL_ASSETS = [\n  '/',\n  '/js/theme-init.js',\n  '/js/${jsFile}',\n  '/js/${appFile}',\n  '/css/${cssFile}',\n];`
@@ -85,7 +87,7 @@ async function main() {
   fs.writeFileSync(path.join(DIST, 'sw.js'), sw);
 
   // Copy remaining static assets
-  for (const f of ['manifest.json', 'cardboard-icon.png', 'share.html']) {
+  for (const f of ['manifest.json', 'cardboard-icon.png', 'share.html', 'robots.txt']) {
     const src = path.join(SRC, f);
     if (fs.existsSync(src)) fs.copyFileSync(src, path.join(DIST, f));
   }

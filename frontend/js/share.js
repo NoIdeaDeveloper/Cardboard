@@ -8,8 +8,12 @@
  * Relies on globals from shared-utils.js, which loads first.
  */
     // Minimal API for shared view
-    const token = new URLSearchParams(location.search).get('token');
+    const hashParams = new URLSearchParams(location.hash.slice(1));
+    const token = hashParams.get('token');
     const staticData = window.__STATIC_COLLECTION__ || null;
+    const _FOCUSABLE = 'button:not([disabled]),[href],input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
+    let _sharePrevFocus = null;
+    let _shareTrapHandler = null;
     if (!token && !staticData) {
       document.querySelector('.loading-spinner p').textContent = 'Invalid share link.';
     }
@@ -26,7 +30,7 @@
     }
     function safeImgUrl(url) {
       if (!url) return null;
-      return url.startsWith('/api/') || url.startsWith('https://') || url.startsWith('http://') ? url : null;
+      return url.startsWith('/api/') || url.startsWith('https://') ? url : null;
     }
     function imgFallback(img) {
       const div = document.createElement('div');
@@ -83,14 +87,10 @@
         : `<span class="unrated">Unrated</span>`;
       const labels = parseList(game.labels).slice(0,3).map(l => `<span class="label-chip">${escapeHtml(l)}</span>`).join('');
       const status = game.status && game.status !== 'owned' ? `<span class="status-badge status-${escapeHtml(game.status)}">${escapeHtml(game.status.charAt(0).toUpperCase()+game.status.slice(1))}</span>` : '';
-      const wishlistExtra = game.status === 'wishlist' && (game.priority || game.target_price) ? `
-        <div class="wishlist-card-meta">
-          ${game.priority ? `<span class="wishlist-priority-sm">${'★'.repeat(game.priority)}</span>` : ''}
-          ${game.target_price ? `<span class="wishlist-price-sm">$${game.target_price.toFixed(2)}</span>` : ''}
-        </div>` : '';
+      const wishlistExtra = '';
       el.innerHTML = `
         <div class="game-card-image">
-          ${safeImgUrl(game.image_url) ? `<img src="${escapeHtml(game.image_url)}" alt="" loading="lazy" onerror="imgFallback(this)">` : '<div class="placeholder-image"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg></div>'}
+          ${safeImgUrl(game.image_url) ? `<img src="${escapeHtml(game.image_url)}" alt="" loading="lazy" data-fallback="1">` : '<div class="placeholder-image"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg></div>'}
         </div>
         <div class="game-card-body">
           <div class="game-card-title-row">
@@ -108,6 +108,8 @@
           </div>
         </div>`;
       el.addEventListener('click', () => openGameDetail(game));
+      const img = el.querySelector('img[data-fallback]');
+      if (img) img.addEventListener('error', () => imgFallback(img));
       return el;
     }
 
@@ -167,15 +169,6 @@
           ${labels.length ? `<div class="modal-section"><div class="section-label">Labels</div><div class="label-chips">${labels.map(l=>`<span class="label-chip">${escapeHtml(l)}</span>`).join('')}</div></div>` : ''}
           ${game.user_rating ? `<div class="modal-section"><div class="section-label">Rating</div><div class="rating-display-only">${renderStars(game.user_rating)}<span class="rating-text">${game.user_rating}/10</span></div></div>` : ''}
           ${game.description ? `<div class="modal-section"><div class="section-label">Description</div><p>${escapeHtml(game.description)}</p></div>` : ''}
-          ${game.user_notes ? `<div class="modal-section"><div class="section-label">Notes</div><p class="notes-display">${escapeHtml(game.user_notes)}</p></div>` : ''}
-          ${game.status === 'wishlist' && (game.priority || game.target_price) ? `
-          <div class="modal-section">
-            <div class="section-label">Wishlist Info</div>
-            <div class="wishlist-info-row">
-              ${game.priority ? `<span class="wishlist-priority">Priority: ${'★'.repeat(game.priority)}${'☆'.repeat(5-game.priority)}</span>` : ''}
-              ${game.target_price ? `<span class="wishlist-target-price">Target: $${game.target_price.toFixed(2)}</span>` : ''}
-            </div>
-          </div>` : ''}
           ${!staticData ? `<div class="modal-section want-to-play-section" id="want-to-play-section">
             ${localStorage.getItem('wtp_' + token + '_' + game.id) ? '<p class="wtp-already-sent">✓ You already requested this game!</p>' : '<button class="btn btn-secondary" id="want-to-play-btn">🙋 Want to Play</button>'}
             <div id="want-to-play-form" style="display:none">
@@ -238,9 +231,9 @@
           const name = inner.querySelector('#wtp-name').value.trim();
           const msg = inner.querySelector('#wtp-message').value.trim();
           try {
-            await fetch(`/api/share/${encodeURIComponent(token)}/games/${game.id}/want-to-play`, {
+            await fetch(`/api/share/games/${game.id}/want-to-play`, {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              headers: { 'Content-Type': 'application/json', 'X-Share-Token': token },
               body: JSON.stringify({ visitor_name: name || null, message: msg || null }),
             }).then(r => { if (!r.ok) return r.json().then(d => { throw new Error(d.detail || `HTTP ${r.status}`); }); });
             try { localStorage.setItem('wtp_' + token + '_' + game.id, '1'); } catch(_) {}
@@ -274,13 +267,29 @@
       }
 
       modal.style.display = 'flex';
-      requestAnimationFrame(() => modal.classList.add('open'));
+      requestAnimationFrame(() => {
+        modal.classList.add('open');
+        _sharePrevFocus = document.activeElement;
+        const focusables = [...modal.querySelectorAll(_FOCUSABLE)].filter(el => el.offsetParent !== null);
+        if (focusables.length) focusables[0].focus();
+        _shareTrapHandler = (e) => {
+          if (e.key !== 'Tab') return;
+          const els = [...modal.querySelectorAll(_FOCUSABLE)].filter(el => el.offsetParent !== null);
+          if (!els.length) return;
+          const first = els[0], last = els[els.length - 1];
+          if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+          else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+        };
+        modal.addEventListener('keydown', _shareTrapHandler);
+      });
       document.body.style.overflow = 'hidden';
     }
 
     function closeGameDetail() {
       const modal = document.getElementById('game-modal');
       modal.classList.remove('open');
+      if (_shareTrapHandler) { modal.removeEventListener('keydown', _shareTrapHandler); _shareTrapHandler = null; }
+      if (_sharePrevFocus) { try { _sharePrevFocus.focus(); } catch (e) {} _sharePrevFocus = null; }
       setTimeout(() => { modal.style.display = 'none'; document.body.style.overflow = ''; }, 200);
     }
 
@@ -345,13 +354,13 @@
       games = staticData;
       buildMechanicsFilter();
       render();
-      const gameParam = new URLSearchParams(location.search).get('game');
+      const gameParam = new URLSearchParams(location.hash.slice(1)).get('game');
       if (gameParam) {
         const target = games.find(g => g.id === parseInt(gameParam, 10));
         if (target) openGameDetail(target);
       }
     } else if (token) {
-      fetch(`/api/share/${encodeURIComponent(token)}/games`)
+      fetch('/api/share/games', { headers: { 'X-Share-Token': token } })
         .then(r => {
           if (!r.ok) throw new Error(r.status === 404 ? 'Invalid or expired share link.' : `HTTP ${r.status}`);
           return r.json();
@@ -360,7 +369,7 @@
           games = data;
           buildMechanicsFilter();
           render();
-          const gameParam = new URLSearchParams(location.search).get('game');
+          const gameParam = new URLSearchParams(location.hash.slice(1)).get('game');
           if (gameParam) {
             const target = games.find(g => g.id === parseInt(gameParam, 10));
             if (target) openGameDetail(target);

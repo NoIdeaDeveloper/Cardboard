@@ -6,6 +6,10 @@
  * builders (game cards, modal content, stats view).
  */
 
+// Hoisted so each buildStatsView() call can disconnect the previous observer —
+// otherwise re-renders leak observers that hold strong refs to detached sections.
+let _statsSectionObserver = null;
+
 // ===== Location Datalist Helper =====
 function _buildLocationDatalist(games, field) {
   const freq = {};
@@ -214,9 +218,10 @@ function buildGameCard(game) {
         ${expansionBadgeHtml}
         ${game.loaned_to ? `<span class="loan-badge">Loaned to ${escapeHtml(game.loaned_to)}</span>` : ''}
         ${game.share_hidden ? `<span class="share-hidden-badge">Hidden from share</span>` : ''}
-      </div>
-    </div>`;
+    </div>
+  `;
 
+  wireImgFallbacks(el);
   return el;
 }
 
@@ -275,6 +280,7 @@ function buildGameListItem(game) {
     </div>
     <div class="list-rating">${ratingHtml}</div>`;
 
+  wireImgFallbacks(el);
   return el;
 }
 
@@ -463,10 +469,13 @@ function buildModalContent(game, sessions, onSave, onDelete, onAddSession, onDel
       : '';
     return `<span class="session-date">${escapeHtml(formatDate(s.played_at))}</span>
           ${s.solo ? `<span class="session-meta session-solo">Solo</span>` : ''}
-          ${s.player_count && !s.solo ? `<span class="session-meta">${pluralize(s.player_count, 'player')}</span>` : ''}
+          ${s.cooperative ? `<span class="session-meta session-coop">Co-op</span>` : ''}
+          ${s.cooperative && s.outcome ? `<span class="session-meta session-outcome session-outcome-${s.outcome}">${({win:'🏆 Win',loss:'❌ Loss',draw:'🤝 Draw',incomplete:'⏹ Incomplete'})[s.outcome] || escapeHtml(s.outcome)}</span>` : ''}
+          ${s.cooperative && s.scenario ? `<span class="session-meta">${escapeHtml(s.scenario)}</span>` : ''}
+          ${s.player_count && !s.solo && !s.cooperative ? `<span class="session-meta">${pluralize(s.player_count, 'player')}</span>` : ''}
           ${s.duration_minutes ? `<span class="session-meta">${s.duration_minutes} min</span>` : ''}
           ${playersHtml ? `<span class="session-meta">${playersHtml}</span>` : ''}
-          ${s.winner && !s.solo ? `<span class="session-meta">&#127942; ${escapeHtml(s.winner)}</span>` : ''}
+          ${s.winner && !s.solo && !s.cooperative ? `<span class="session-meta">&#127942; ${escapeHtml(s.winner)}</span>` : ''}
           ${s.notes ? `<span class="session-notes">${escapeHtml(s.notes)}</span>` : ''}
           ${s.session_rating ? `<span class="session-rating">${'★'.repeat(s.session_rating)}${'☆'.repeat(5 - s.session_rating)}</span>` : ''}`;
   }
@@ -619,7 +628,7 @@ function buildModalContent(game, sessions, onSave, onDelete, onAddSession, onDel
         <div class="section-label">Rulebook</div>
         <div class="instructions-existing" id="instructions-existing" style="${hasInstructions ? '' : 'display:none'}">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-          <a href="/api/games/${game.id}/instructions" target="_blank" class="instructions-link">${escapeHtml(game.instructions_filename || '')}</a>
+          <a href="/api/games/${game.id}/instructions" target="_blank" rel="noopener noreferrer" class="instructions-link">${escapeHtml(game.instructions_filename || '')}</a>
           <button class="btn btn-ghost btn-sm" id="delete-instructions-btn">Remove</button>
         </div>
         <div class="instructions-upload" id="instructions-upload" style="${hasInstructions ? 'display:none' : ''}">
@@ -635,7 +644,7 @@ function buildModalContent(game, sessions, onSave, onDelete, onAddSession, onDel
     : hasInstructions
       ? `<div class="modal-section">
           <div class="section-label">Rulebook</div>
-          <a href="/api/games/${game.id}/instructions" target="_blank" class="btn btn-ghost btn-sm">View Rulebook</a>
+          <a href="/api/games/${game.id}/instructions" target="_blank" rel="noopener noreferrer" class="btn btn-ghost btn-sm">View Rulebook</a>
         </div>`
       : '';
 
@@ -858,8 +867,23 @@ function buildModalContent(game, sessions, onSave, onDelete, onAddSession, onDel
               <div class="session-scores-row" id="session-scores-container"></div>
             </div>
             <div class="form-group full-width">
-              <label for="session-winner">Winner</label>
+              <label for="session-winner" id="session-winner-label">Winner</label>
               <input type="text" id="session-winner" class="form-input" placeholder="optional" autocomplete="off">
+            </div>
+            <div class="form-group full-width">
+              <label class="inline-toggle" style="cursor:pointer">
+                <input type="checkbox" id="session-coop"> Cooperative game
+              </label>
+            </div>
+            <div class="form-group full-width" id="session-coop-fields" style="display:none">
+              <label>Outcome</label>
+              <div class="ql-coop-outcome">
+                ${[['win','🏆 Win'],['loss','❌ Loss'],['draw','🤝 Draw'],['incomplete','⏹ Incomplete']].map(([v,l]) => `<label class="inline-toggle" style="cursor:pointer; margin-right:1rem"><input type="radio" name="session-outcome" value="${v}"> ${l}</label>`).join('')}
+              </div>
+            </div>
+            <div class="form-group full-width" id="session-scenario-field" style="display:none">
+              <label for="session-scenario">Scenario / Difficulty</label>
+              <input type="text" id="session-scenario" class="form-input" placeholder="optional" autocomplete="off">
             </div>
             <div class="form-group full-width">
               <label for="session-notes">Notes</label>
@@ -944,6 +968,21 @@ function buildModalContent(game, sessions, onSave, onDelete, onAddSession, onDel
 
       ${editFieldsSectionHtml}
 
+      ${mode === 'view' ? `<div class="modal-section maintenance-section" id="maintenance-section">
+        <div class="section-label">Maintenance Log</div>
+        <div class="maintenance-list" id="maintenance-list"></div>
+        <div class="maintenance-add-form">
+          <select id="maintenance-kind" class="form-input form-input-sm">
+            <option value="missing_piece">Missing Piece</option>
+            <option value="sleeve">Needs Sleeves</option>
+            <option value="damage">Damage</option>
+            <option value="other">Other</option>
+          </select>
+          <input type="text" id="maintenance-desc" class="form-input form-input-sm" placeholder="Describe the issue…" maxlength="2000">
+          <button class="btn btn-secondary btn-sm" id="maintenance-add-btn">Add</button>
+        </div>
+      </div>` : ''}
+
       ${mode === 'view' ? `<div class="modal-section similar-games-section" id="similar-games-section" style="display:none">
         <div class="section-label">Similar in Your Collection</div>
         <div class="similar-games-list" id="similar-games-list"></div>
@@ -1008,6 +1047,22 @@ function buildModalContent(game, sessions, onSave, onDelete, onAddSession, onDel
     if (scContainer) scContainer.innerHTML = '';
   });
 
+  // Cooperative mode toggle for log form
+  const coopCheckbox = el.querySelector('#session-coop');
+  const coopFields = el.querySelector('#session-coop-fields');
+  const scenarioField = el.querySelector('#session-scenario-field');
+  const winnerLabel = el.querySelector('#session-winner-label');
+  const winnerInput = el.querySelector('#session-winner');
+  if (coopCheckbox) {
+    coopCheckbox.addEventListener('change', () => {
+      const isCoop = coopCheckbox.checked;
+      if (coopFields) coopFields.style.display = isCoop ? '' : 'none';
+      if (scenarioField) scenarioField.style.display = isCoop ? '' : 'none';
+      if (winnerLabel) winnerLabel.parentElement.style.display = isCoop ? 'none' : '';
+      if (winnerInput && isCoop) winnerInput.value = '';
+    });
+  }
+
   // Dynamic score inputs for log form
   function renderLogScoreInputs() {
     const namesRaw = el.querySelector('#session-player-names').value.trim();
@@ -1069,6 +1124,8 @@ function buildModalContent(game, sessions, onSave, onDelete, onAddSession, onDel
       : null;
 
     const _rp = el.querySelector('#session-rating-picker');
+    const isCoop = el.querySelector('#session-coop').checked;
+    const outcomeEl = el.querySelector('input[name="session-outcome"]:checked');
     const scores = {};
     el.querySelectorAll('#session-scores-container .session-score-input').forEach(inp => {
       const val = parseInt(inp.value, 10);
@@ -1078,9 +1135,12 @@ function buildModalContent(game, sessions, onSave, onDelete, onAddSession, onDel
       played_at:        dateVal,
       player_count:     parseInt(el.querySelector('#session-players').value, 10) || null,
       duration_minutes: parseInt(el.querySelector('#session-duration').value, 10) || null,
-      winner:           el.querySelector('#session-winner').value.trim() || null,
+      winner:           isCoop ? null : (el.querySelector('#session-winner').value.trim() || null),
       notes:            el.querySelector('#session-notes').value.trim() || null,
       session_rating:   _rp ? (parseInt(_rp.dataset.value, 10) || null) : null,
+      cooperative:      isCoop,
+      outcome:          isCoop ? (outcomeEl ? outcomeEl.value : null) : null,
+      scenario:         isCoop ? (el.querySelector('#session-scenario').value.trim() || null) : null,
       player_names:     playerNames,
       scores:           Object.keys(scores).length ? scores : null,
     };
@@ -1171,9 +1231,24 @@ function buildModalContent(game, sessions, onSave, onDelete, onAddSession, onDel
             <label>Scores</label>
             <div class="session-scores-row se-scores-container"></div>
           </div>
-          <div class="form-group full-width">
+          <div class="form-group full-width se-winner-field">
             <label>Winner</label>
             <input type="text" class="form-input se-winner" placeholder="optional" autocomplete="off">
+          </div>
+          <div class="form-group full-width">
+            <label class="inline-toggle" style="cursor:pointer">
+              <input type="checkbox" class="se-coop"> Cooperative game
+            </label>
+          </div>
+          <div class="form-group full-width se-coop-fields" style="display:none">
+            <label>Outcome</label>
+            <div class="ql-coop-outcome">
+              ${[['win','🏆 Win'],['loss','❌ Loss'],['draw','🤝 Draw'],['incomplete','⏹ Incomplete']].map(([v,l]) => `<label class="inline-toggle" style="cursor:pointer; margin-right:1rem"><input type="radio" name="se-outcome" value="${v}"> ${l}</label>`).join('')}
+            </div>
+          </div>
+          <div class="form-group full-width se-scenario-field" style="display:none">
+            <label>Scenario / Difficulty</label>
+            <input type="text" class="form-input se-scenario" placeholder="optional" autocomplete="off">
           </div>
           <div class="form-group full-width">
             <label>Notes</label>
@@ -1220,6 +1295,19 @@ function buildModalContent(game, sessions, onSave, onDelete, onAddSession, onDel
         form.querySelector('.se-player-names').value = (s.players || []).join(', ');
         form.querySelector('.se-winner').value = s.winner || '';
         form.querySelector('.se-notes').value = s.notes || '';
+        form.querySelector('.se-scenario').value = s.scenario || '';
+        if (s.cooperative) form.querySelector('.se-coop').checked = true;
+        if (s.outcome) {
+          const ocRadio = form.querySelector(`input[name="se-outcome"][value="${s.outcome}"]`);
+          if (ocRadio) ocRadio.checked = true;
+        }
+        // Show/hide co-op fields based on prefill
+        const seCoop = form.querySelector('.se-coop');
+        if (seCoop && seCoop.checked) {
+          form.querySelector('.se-coop-fields').style.display = '';
+          form.querySelector('.se-scenario-field').style.display = '';
+          form.querySelector('.se-winner-field').style.display = 'none';
+        }
         const seRp = form.querySelector('.se-rating');
         if (seRp && s.session_rating) {
           seRp.dataset.value = s.session_rating;
@@ -1253,6 +1341,18 @@ function buildModalContent(game, sessions, onSave, onDelete, onAddSession, onDel
         });
       }
 
+      // Cooperative mode toggle (edit form)
+      const seCoopCheckbox = form.querySelector('.se-coop');
+      if (seCoopCheckbox) {
+        seCoopCheckbox.addEventListener('change', () => {
+          const isCoop = seCoopCheckbox.checked;
+          form.querySelector('.se-coop-fields').style.display = isCoop ? '' : 'none';
+          form.querySelector('.se-scenario-field').style.display = isCoop ? '' : 'none';
+          form.querySelector('.se-winner-field').style.display = isCoop ? 'none' : '';
+          if (isCoop) form.querySelector('.se-winner').value = '';
+        });
+      }
+
       info.style.display = 'none';
       editBtn.style.display = 'none';
       item.querySelector('.session-delete').style.display = 'none';
@@ -1272,6 +1372,8 @@ function buildModalContent(game, sessions, onSave, onDelete, onAddSession, onDel
         const playerNamesRaw = form.querySelector('.se-player-names').value.trim();
         const playerNames = playerNamesRaw ? playerNamesRaw.split(',').map(n => n.trim()).filter(Boolean) : null;
         const seRp = form.querySelector('.se-rating');
+        const seIsCoop = form.querySelector('.se-coop').checked;
+        const seOutcomeEl = form.querySelector('input[name="se-outcome"]:checked');
         const scores = {};
         form.querySelectorAll('.se-scores-container .session-score-input').forEach(inp => {
           const val = parseInt(inp.value, 10);
@@ -1281,9 +1383,12 @@ function buildModalContent(game, sessions, onSave, onDelete, onAddSession, onDel
           played_at:        dateVal,
           player_count:     parseInt(form.querySelector('.se-players').value, 10) || null,
           duration_minutes: parseInt(form.querySelector('.se-duration').value, 10) || null,
-          winner:           form.querySelector('.se-winner').value.trim() || null,
+          winner:           seIsCoop ? null : (form.querySelector('.se-winner').value.trim() || null),
           notes:            form.querySelector('.se-notes').value.trim() || null,
           session_rating:   seRp ? (parseInt(seRp.dataset.value, 10) || null) : null,
+          cooperative:      seIsCoop,
+          outcome:          seIsCoop ? (seOutcomeEl ? seOutcomeEl.value : null) : null,
+          scenario:         seIsCoop ? (form.querySelector('.se-scenario').value.trim() || null) : null,
           player_names:     playerNames,
           scores:           Object.keys(scores).length ? scores : null,
         };
@@ -1387,6 +1492,73 @@ function buildModalContent(game, sessions, onSave, onDelete, onAddSession, onDel
       }).catch(() => { /* non-fatal */ });
     }
 
+    // Maintenance log — lazy loaded
+    const maintSection = el.querySelector('#maintenance-section');
+    const maintList    = el.querySelector('#maintenance-list');
+    if (maintSection && maintList && typeof API !== 'undefined') {
+      const gameId = game.id;
+      function renderMaintenanceEntries(entries) {
+        if (!entries.length) {
+          maintList.innerHTML = '<div class="maintenance-empty">No maintenance issues recorded.</div>';
+          return;
+        }
+        maintList.innerHTML = entries.map(e => `
+          <div class="maintenance-entry${e.status === 'resolved' ? ' resolved' : ''}" data-entry-id="${e.id}">
+            <span class="maintenance-entry-kind ${escapeHtml(e.kind)}">${escapeHtml(e.kind.replace('_', ' '))}</span>
+            <span class="maintenance-entry-desc">${escapeHtml(e.description)}</span>
+            <div class="maintenance-entry-actions">
+              ${e.status === 'open'
+                ? `<button class="btn btn-ghost btn-sm maint-resolve-btn" title="Mark resolved">✓</button>`
+                : `<button class="btn btn-ghost btn-sm maint-reopen-btn" title="Reopen">↻</button>`}
+              <button class="btn btn-ghost btn-sm maint-delete-btn" title="Delete">✕</button>
+            </div>
+          </div>`).join('');
+        maintList.querySelectorAll('.maint-resolve-btn').forEach(b => {
+          b.addEventListener('click', async () => {
+            const id = +b.closest('.maintenance-entry').dataset.entryId;
+            try { await API.updateMaintenance(id, { status: 'resolved' }); loadMaint(); }
+            catch (err) { showToast(classifyError(err), 'error'); }
+          });
+        });
+        maintList.querySelectorAll('.maint-reopen-btn').forEach(b => {
+          b.addEventListener('click', async () => {
+            const id = +b.closest('.maintenance-entry').dataset.entryId;
+            try { await API.updateMaintenance(id, { status: 'open' }); loadMaint(); }
+            catch (err) { showToast(classifyError(err), 'error'); }
+          });
+        });
+        maintList.querySelectorAll('.maint-delete-btn').forEach(b => {
+          b.addEventListener('click', async () => {
+            const id = +b.closest('.maintenance-entry').dataset.entryId;
+            try { await API.deleteMaintenance(id); loadMaint(); }
+            catch (err) { showToast(classifyError(err), 'error'); }
+          });
+        });
+      }
+      async function loadMaint() {
+        try {
+          const entries = await API.listMaintenance(gameId);
+          if (!maintSection.isConnected) return;
+          renderMaintenanceEntries(entries);
+        } catch { /* non-fatal */ }
+      }
+      const addBtn = el.querySelector('#maintenance-add-btn');
+      if (addBtn) {
+        addBtn.addEventListener('click', async () => {
+          const kindEl = el.querySelector('#maintenance-kind');
+          const descEl = el.querySelector('#maintenance-desc');
+          const desc = descEl.value.trim();
+          if (!desc) return;
+          try {
+            await API.addMaintenance(gameId, kindEl.value, desc);
+            descEl.value = '';
+            loadMaint();
+          } catch (err) { showToast(classifyError(err), 'error'); }
+        });
+      }
+      loadMaint();
+    }
+
     const descText   = el.querySelector('#desc-text');
     const descToggle = el.querySelector('#desc-toggle');
     if (descText && descToggle) {
@@ -1482,7 +1654,7 @@ function buildModalContent(game, sessions, onSave, onDelete, onAddSession, onDel
           existing.style.display = 'flex';
           existing.innerHTML = `
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-            <a href="/api/games/${game.id}/instructions" target="_blank" class="instructions-link">${escapeHtml(filename)}</a>
+            <a href="/api/games/${game.id}/instructions" target="_blank" rel="noopener noreferrer" class="instructions-link">${escapeHtml(filename)}</a>
             <button class="btn btn-ghost btn-sm" id="delete-instructions-btn">Remove</button>`;
           el.querySelector('#instructions-upload').style.display = 'none';
           wireDeleteInstructions();
@@ -2045,7 +2217,10 @@ function openGalleryLightbox(images, startIndex = 0) {
   document.addEventListener('keydown', onKey, true);
 
   const prevOverflow = document.body.style.overflow;
+  let closed = false;
   function close() {
+    if (closed) return;
+    closed = true;
     document.removeEventListener('keydown', onKey);
     popModalOpen();
     overlay.remove();
@@ -2399,6 +2574,10 @@ function openCollectionSettingsModal(prefs, onPrefsChange) {
 }
 
 function buildStatsView(stats, games, prefs = {}, onPrefsChange = null, goals = [], deltas = null) {
+  // Disconnect any previous stats section observer so re-renders don't leak
+  // observers that hold strong refs to detached .stats-section elements.
+  _statsSectionObserver?.disconnect();
+  _statsSectionObserver = null;
   const SECTION_DEFAULTS = {
     show_summary: true, show_most_played: true, show_top_players: true,
     show_recently_played: true,
@@ -3411,7 +3590,7 @@ function buildStatsView(stats, games, prefs = {}, onPrefsChange = null, goals = 
 
   // IntersectionObserver to highlight active jump nav chip
   if (jumpNav && 'IntersectionObserver' in window) {
-    const sectionObserver = new IntersectionObserver((entries) => {
+    _statsSectionObserver = new IntersectionObserver((entries) => {
       entries.forEach(entry => {
         const chip = jumpNav.querySelector(`[data-target="${entry.target.dataset.section}"]`);
         if (chip) {
@@ -3419,7 +3598,7 @@ function buildStatsView(stats, games, prefs = {}, onPrefsChange = null, goals = 
         }
       });
     }, { rootMargin: '-40% 0px -55% 0px', threshold: 0 });
-    el.querySelectorAll('.stats-section').forEach(sec => sectionObserver.observe(sec));
+    el.querySelectorAll('.stats-section').forEach(sec => _statsSectionObserver.observe(sec));
   }
 
   return el;

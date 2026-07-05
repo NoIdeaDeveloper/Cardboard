@@ -14,12 +14,13 @@ const SHELL_ASSETS = [
   '/css/style.css',
 ];
 
-// API GET paths to cache for offline read access (stale-while-revalidate)
+// API GET paths to cache for offline read access (stale-while-revalidate).
+// Note: /api/players/ is intentionally excluded — player names and avatar URLs
+// are personal data that should not persist in the SW cache on shared devices.
 const CACHEABLE_API_PREFIXES = [
   '/api/games/',
   '/api/stats',
   '/api/collection/stats',
-  '/api/players/',
 ];
 
 function isCacheableApi(pathname) {

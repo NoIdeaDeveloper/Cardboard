@@ -4,6 +4,7 @@
   <script src="js/theme-init.js"></script>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="robots" content="noindex, noarchive" />
   <title>Cardboard</title>
   <link rel="icon" type="image/png" href="cardboard-icon.png" />
   <link rel="manifest" href="/manifest.json" />
@@ -45,8 +46,22 @@
           <span>Share</span>
         </button>
       </nav>
+      <button class="nav-bell" id="nav-bell" title="Notifications" aria-label="Notifications" aria-haspopup="true" aria-expanded="false">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+        <span class="nav-bell-badge" id="nav-bell-badge" style="display:none">0</span>
+      </button>
     </div>
   </header>
+
+  <!-- Notification dropdown -->
+  <div class="notif-dropdown" id="notif-dropdown" style="display:none" role="menu" aria-label="Notifications">
+    <div class="notif-dropdown-header">
+      <span class="notif-dropdown-title">Notifications</span>
+      <button class="btn btn-ghost btn-sm" id="notif-read-all">Mark all read</button>
+    </div>
+    <div class="notif-dropdown-body" id="notif-dropdown-body"></div>
+    <div class="notif-dropdown-empty" id="notif-dropdown-empty">No notifications</div>
+  </div>
 
   <!-- Pause mode indicator -->
   <div class="pause-banner" id="pause-banner" style="display:none">
@@ -101,6 +116,9 @@
               </button>
               <button class="icon-btn" id="view-list" data-tooltip="List view" aria-label="List view">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+              </button>
+              <button class="icon-btn" id="view-grouped" data-tooltip="Grouped view (expansions nested)" aria-label="Grouped view">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="6" width="7" height="4"/><line x1="10" y1="6" x2="14" y2="8"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="17" width="7" height="4"/><line x1="10" y1="17" x2="14" y2="19"/></svg>
               </button>
             </div>
             <div class="density-toggle" id="density-toggle" role="group" aria-label="Grid density" style="display:none">
@@ -159,9 +177,29 @@
             <span class="filter-unit">min</span>
           </div>
           <button class="pick-for-me-btn" id="game-night-btn" aria-label="Open game night planner">🎲 Game Night</button>
+          <button class="filter-pill" id="filter-loaned">Loaned Out</button>
+          <div class="filter-field">
+            <label class="filter-label" for="filter-condition">Condition</label>
+            <select id="filter-condition" class="filter-input">
+              <option value="">any</option>
+              <option value="New">New</option>
+              <option value="Good">Good</option>
+              <option value="Fair">Fair</option>
+              <option value="Poor">Poor</option>
+            </select>
+          </div>
+          <div class="filter-field">
+            <label class="filter-label" for="filter-price-min">Price</label>
+            <input type="number" id="filter-price-min" class="filter-input" min="0" step="0.01" placeholder="min $" autocomplete="off">
+            <span class="filter-unit">to</span>
+            <input type="number" id="filter-price-max" class="filter-input" min="0" step="0.01" placeholder="max $" autocomplete="off">
+          </div>
           <div id="filter-locations-chips" class="filter-chips-row" style="display:none"></div>
           <div id="filter-mechanics-chips" class="filter-chips-row" style="display:none"></div>
           <div id="filter-categories-chips" class="filter-chips-row" style="display:none"></div>
+          <div id="filter-labels-chips" class="filter-chips-row" style="display:none"></div>
+          <div id="filter-designers-chips" class="filter-chips-row" style="display:none"></div>
+          <div id="filter-publishers-chips" class="filter-chips-row" style="display:none"></div>
           <button class="filter-clear-all" id="filter-clear-all">Clear filters</button>
         </div>
       </div>

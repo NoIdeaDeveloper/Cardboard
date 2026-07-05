@@ -108,8 +108,11 @@ Set via environment variables (or `.env` for Docker):
 |---|---|---|
 | `PORT` | `8000` | Host port the container is mapped to |
 | `DATA_PATH` | `./data` | Host path for the data bind mount |
-| `ALLOWED_ORIGINS` | `*` | CORS origins (set to your domain in production) |
+| `ALLOWED_ORIGINS` | `http://localhost, http://127.0.0.1` | CORS origins — set to your domain in production (e.g. `https://cardboard.example.com`). Setting `*` exposes your data to any website |
 | `LOG_LEVEL` | `INFO` | Python log level |
+| `ENABLE_DOCS` | `false` | Set to `true` to enable interactive API docs at `/api/docs` |
+| `TRUSTED_PROXIES` | *(none)* | Comma-separated reverse-proxy IPs (e.g. `10.0.0.1,172.16.0.1`). When set, `X-Forwarded-For` is trusted from these peers so the BGG rate limiter buckets per real client. Without this, all requests behind a proxy share one bucket |
+| `WANT_TO_PLAY_RETENTION_DAYS` | `90` | How long to retain visitor "Want to Play" submissions before auto-deletion. Set to `0` to keep forever |
 | `DATABASE_URL` | `sqlite:///./data/cardboard.db` | SQLAlchemy connection string — only needed if using PostgreSQL or a custom path |
 | `FRONTEND_PATH` | `/app/frontend` | Path to the frontend assets — only needed if running the backend outside of Docker |
 
@@ -127,6 +130,18 @@ data/
 ├── instructions/      # PDFs
 └── avatars/           # player avatars
 ```
+
+## Uninstall / Factory Reset
+
+To wipe all data (games, sessions, players, goals, tokens, settings) and delete all media files without removing the container:
+
+```bash
+curl -X DELETE http://localhost:8000/api/everything \
+  -H "Content-Type: application/json" \
+  -d '{"confirm": "DELETE EVERYTHING"}'
+```
+
+This clears every table and empties `images/`, `gallery/`, `instructions/`, and `avatars/`. The confirmation string is required to prevent accidental triggers.
 
 ## Development
 

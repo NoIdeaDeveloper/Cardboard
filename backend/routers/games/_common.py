@@ -21,8 +21,9 @@ from sqlalchemy.orm import Session
 from database import SessionLocal
 import models
 import schemas
-from utils import validate_url_safety, safe_image_ext, safe_delete_file, build_safe_opener
+from utils import validate_url_safety, safe_image_ext, safe_delete_file, build_safe_opener, strip_image_metadata
 from constants import MAX_IMAGE_SIZE
+from PIL import Image
 
 logger = logging.getLogger("cardboard.games")
 
@@ -57,7 +58,6 @@ def _delete_cached_image(game_id: int) -> None:
 def _generate_thumbnail(src_path: str, game_id: int) -> str | None:
     """Generate a ~400px WebP thumbnail from src_path. Returns thumbnail filename or None on failure."""
     try:
-        from PIL import Image
         thumb_path = os.path.join(IMAGES_DIR, f"{game_id}_thumb.webp")
         with Image.open(src_path) as img:
             img.thumbnail((THUMB_MAX_SIZE, THUMB_MAX_SIZE), Image.LANCZOS)
@@ -120,6 +120,17 @@ def _cache_game_image(game_id: int, image_url: str) -> None:
                     except Exception:
                         os.unlink(tmp_path)
                         raise
+                # Strip EXIF/metadata from the downloaded image before persisting.
+                # Handles user-supplied URLs that may serve phone photos with GPS.
+                try:
+                    with open(tmp_path, "rb") as f:
+                        raw = f.read()
+                    stripped = strip_image_metadata(raw, ext)
+                    if stripped != raw:
+                        with open(tmp_path, "wb") as f:
+                            f.write(stripped)
+                except Exception:
+                    logger.warning("EXIF stripping failed for cached game %d image", game_id, exc_info=True)
                 os.replace(tmp_path, dest)
         except Exception:
             logger.exception("Image cache failed for game %d", game_id)
@@ -249,30 +260,73 @@ def _load_tags(games, db: Session) -> None:
         for g in games:
             setattr(g, field, json.dumps(sorted(by_game.get(g.id, []))))
 
-def _attach_parent_name(game: models.Game, db: Session) -> schemas.GameResponse:
-    """Build a GameResponse with parent_game_name, heat_level, expansion_count, and session_count populated."""
-    data = schemas.GameResponse.model_validate(game)
-    if game.parent_game_id:
-        parent = db.query(models.Game).filter(models.Game.id == game.parent_game_id).first()
-        data.parent_game_name = parent.name if parent else None
-    data.heat_level = _heat_level(game.last_played)
-    data.expansion_count = (
-        db.query(func.count(models.Game.id))
-        .filter(models.Game.parent_game_id == game.id)
-        .scalar() or 0
-    )
-    data.session_count = (
-        db.query(func.count(models.PlaySession.id))
-        .filter(models.PlaySession.game_id == game.id)
-        .scalar() or 0
-    )
+def _attach_parent_name(game: models.Game, db: Session, response_cls=schemas.GameResponse):
+    """Build a response object with parent_game_name, heat_level, expansion_count, and session_count populated.
+
+    Uses a single query with scalar subqueries instead of 3 separate round-trips.
+    """
+    data = response_cls.model_validate(game)
+    if hasattr(data, 'heat_level'):
+        data.heat_level = _heat_level(game.last_played)
+    # Single query fetches parent name, expansion count, and session count together.
+    needs_parent = bool(game.parent_game_id) and hasattr(data, 'parent_game_name')
+    needs_expansion = hasattr(data, 'expansion_count')
+    needs_session = hasattr(data, 'session_count')
+    needs_rolled = hasattr(data, 'rolled_up_session_count')
+    # rolled_up_session_count needs both the game's own sessions and its
+    # expansions' sessions, so always compute both when needs_rolled.
+    if needs_parent or needs_expansion or needs_session or needs_rolled:
+        parent_name_sub = (
+            db.query(models.Game.name)
+            .filter(models.Game.id == game.parent_game_id)
+            .scalar_subquery()
+            if needs_parent else None
+        )
+        expansion_sub = (
+            db.query(func.count(models.Game.id))
+            .filter(models.Game.parent_game_id == game.id)
+            .scalar_subquery()
+            if needs_expansion else None
+        )
+        own_session_sub = (
+            db.query(func.count(models.PlaySession.id))
+            .filter(models.PlaySession.game_id == game.id)
+            .scalar_subquery()
+            if (needs_session or needs_rolled) else None
+        )
+        expansion_session_sub = (
+            db.query(func.count(models.PlaySession.id))
+            .join(models.Game, models.Game.id == models.PlaySession.game_id)
+            .filter(models.Game.parent_game_id == game.id)
+            .scalar_subquery()
+            if needs_rolled else None
+        )
+        cols = []
+        if needs_parent:
+            cols.append(parent_name_sub.label("parent_name"))
+        if needs_expansion:
+            cols.append(expansion_sub.label("expansion_count"))
+        if needs_session or needs_rolled:
+            cols.append(own_session_sub.label("session_count"))
+        if needs_rolled:
+            cols.append(expansion_session_sub.label("expansion_session_count"))
+        row = db.query(*cols).one()
+        if needs_parent:
+            data.parent_game_name = row.parent_name
+        if needs_expansion:
+            data.expansion_count = row.expansion_count or 0
+        if needs_session:
+            data.session_count = row.session_count or 0
+        if needs_rolled:
+            data.rolled_up_session_count = (row.session_count or 0) + (row.expansion_session_count or 0)
     return data
 
 
-def build_game_responses(games: list, db: Session) -> list:
+def build_game_responses(games: list, db: Session, response_cls=schemas.GameResponse) -> list:
     """Batch-populate tags, parent names, expansion counts, and heat levels for a list of Game objects.
 
     Used by both get_games() and sharing._build_game_list() to avoid duplicating this logic.
+    Pass response_cls=schemas.GameShareResponse for public share-token responses to strip private fields.
     """
     _load_tags(games, db)
 
@@ -300,14 +354,34 @@ def build_game_responses(games: list, db: Session) -> list:
     )
     session_counts = {gid: cnt for gid, cnt in session_rows}
 
+    # Rolled-up session counts: for base games, sum their own sessions + all
+    # direct expansion sessions. Expansions are not nestable (validated at
+    # create/update), so one level of children is sufficient.
+    expansion_session_rows = (
+        db.query(models.Game.parent_game_id, func.count(models.PlaySession.id))
+        .join(models.PlaySession, models.PlaySession.game_id == models.Game.id)
+        .filter(models.Game.parent_game_id.isnot(None))
+        .filter(models.Game.parent_game_id.in_(game_ids))
+        .group_by(models.Game.parent_game_id)
+        .all()
+    )
+    expansion_session_counts = {pid: cnt for pid, cnt in expansion_session_rows}
+
     results = []
     for g in games:
-        row = schemas.GameResponse.model_validate(g)
-        if g.parent_game_id:
+        row = response_cls.model_validate(g)
+        if g.parent_game_id and hasattr(row, 'parent_game_name'):
             row.parent_game_name = parent_names.get(g.parent_game_id)
-        row.heat_level = _heat_level(g.last_played)
-        row.expansion_count = expansion_counts.get(g.id, 0)
-        row.session_count = session_counts.get(g.id, 0)
+        if hasattr(row, 'heat_level'):
+            row.heat_level = _heat_level(g.last_played)
+        if hasattr(row, 'expansion_count'):
+            row.expansion_count = expansion_counts.get(g.id, 0)
+        if hasattr(row, 'session_count'):
+            row.session_count = session_counts.get(g.id, 0)
+        if hasattr(row, 'rolled_up_session_count'):
+            row.rolled_up_session_count = (
+                session_counts.get(g.id, 0) + expansion_session_counts.get(g.id, 0)
+            )
         results.append(row)
     return results
 

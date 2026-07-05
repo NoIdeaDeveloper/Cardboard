@@ -29,5 +29,5 @@ def put_setting(key: str, body: SettingValue, db: Session = Depends(get_db)):
     else:
         db.add(models.UserSetting(key=key, value=body.value))
     db.commit()
-    logger.info("Setting saved: %r = %r", key, body.value)
+    logger.info("Setting saved: %r (len=%d)", key, len(body.value))
     return JSONResponse(status_code=204, content=None)

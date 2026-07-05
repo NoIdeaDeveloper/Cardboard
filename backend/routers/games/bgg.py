@@ -22,7 +22,7 @@ from sqlalchemy.orm import Session
 from database import get_db
 import models
 import schemas
-from utils import get_game_or_404, build_safe_opener
+from utils import get_game_or_404, build_safe_opener, sanitize_html_to_text, get_client_ip
 from routers.games._common import (
     _save_tags, _load_tags, _cache_game_image, _attach_parent_name,
 )
@@ -44,7 +44,7 @@ BGG_SEARCH_URL = "https://boardgamegeek.com/xmlapi2/search?query={query}&type=bo
 
 
 def _check_bgg_rate_limit(request: Request) -> None:
-    ip = request.client.host if request.client else "unknown"
+    ip = get_client_ip(request)
     now = time.time()
     cutoff = now - _BGG_RATE_WINDOW
     with _bgg_lock:
@@ -111,9 +111,11 @@ def _parse_bgg_item(item: ET.Element) -> dict:
     name_el = item.find("name[@type='primary']") or item.find("name")
     name = name_el.get("value", "").strip() if name_el is not None else ""
 
-    # Description
+    # Description — BGG serves this as HTML; strip all tags/scripts/handlers
+    # server-side as defense-in-depth (frontend also escapes via escapeHtml).
     desc_el = item.find("description")
-    description = (desc_el.text or "").strip()[:5000] if desc_el is not None else None
+    raw_desc = (desc_el.text or "").strip()[:5000] if desc_el is not None else ""
+    description = sanitize_html_to_text(raw_desc) or None
 
     # Year
     year = _int_val("yearpublished")

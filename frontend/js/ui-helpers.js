@@ -184,7 +184,7 @@ function saveJsonToStorage(key, value) {
 
 function isSafeUrl(url) {
   if (!url) return false;
-  return url.startsWith('/api/') || url.startsWith('https://') || url.startsWith('http://');
+  return url.startsWith('/api/') || url.startsWith('https://');
 }
 
 function placeholderSvg() {
@@ -197,9 +197,20 @@ function placeholderSvg() {
 // ===== Card / List Media Helpers =====
 
 function thumbImgHtml(src, name) {
-  return `<img src="${escapeHtml(src)}" alt="${escapeHtml(name)}" loading="lazy"
-             onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
-         ${placeholderSvg().replace('class="placeholder-icon"', 'class="placeholder-icon" style="display:none"')}`;
+  return `<img src="${escapeHtml(src)}" alt="${escapeHtml(name)}" loading="lazy" data-fallback="1">
+          ${placeholderSvg().replace('class="placeholder-icon"', 'class="placeholder-icon" style="display:none"')}`;
+}
+
+function wireImgFallbacks(container) {
+  container.querySelectorAll('img[data-fallback]').forEach(img => {
+    if (img.dataset.wired) return;
+    img.dataset.wired = '1';
+    img.addEventListener('error', () => {
+      img.style.display = 'none';
+      const sib = img.nextElementSibling;
+      if (sib) sib.style.display = 'flex';
+    });
+  });
 }
 
 function cardMediaHtml(game) {

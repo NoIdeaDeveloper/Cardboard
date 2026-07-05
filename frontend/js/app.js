@@ -33,6 +33,13 @@ if ('serviceWorker' in navigator) {
     if (state.filterTime !== null) params.set('time', String(state.filterTime));
     if (state.filterMechanics.length) params.set('mechanics', state.filterMechanics.join(','));
     if (state.filterCategories.length) params.set('categories', state.filterCategories.join(','));
+    if (state.filterLabels.length) params.set('labels', state.filterLabels.join(','));
+    if (state.filterDesigners.length) params.set('designers', state.filterDesigners.join(','));
+    if (state.filterPublishers.length) params.set('publishers', state.filterPublishers.join(','));
+    if (state.filterCondition) params.set('condition', state.filterCondition);
+    if (state.filterLoaned === true) params.set('loaned', '1');
+    if (state.filterPriceMin != null) params.set('price_min', String(state.filterPriceMin));
+    if (state.filterPriceMax != null) params.set('price_max', String(state.filterPriceMax));
     if (state.filterLocation !== null) params.set('location', state.filterLocation);
     const qs = params.toString();
     const url = qs ? '?' + qs : location.pathname;
@@ -55,13 +62,29 @@ if ('serviceWorker' in navigator) {
     }
     if (params.has('view')) {
       const v = params.get('view');
-      if (['grid', 'list'].includes(v)) state.viewMode = v;
+      if (['grid', 'list', 'grouped'].includes(v)) state.viewMode = v;
     }
     if (params.has('never_played')) state.filterNeverPlayed = true;
     if (params.has('players')) state.filterPlayers = parseInt(params.get('players'), 10) || null;
     if (params.has('time')) state.filterTime = parseInt(params.get('time'), 10) || null;
     if (params.has('mechanics')) state.filterMechanics = params.get('mechanics').split(',').filter(Boolean);
     if (params.has('categories')) state.filterCategories = params.get('categories').split(',').filter(Boolean);
+    if (params.has('labels')) state.filterLabels = params.get('labels').split(',').filter(Boolean);
+    if (params.has('designers')) state.filterDesigners = params.get('designers').split(',').filter(Boolean);
+    if (params.has('publishers')) state.filterPublishers = params.get('publishers').split(',').filter(Boolean);
+    if (params.has('condition')) {
+      const c = params.get('condition');
+      if (['New', 'Good', 'Fair', 'Poor'].includes(c)) state.filterCondition = c;
+    }
+    if (params.has('loaned') && params.get('loaned') === '1') state.filterLoaned = true;
+    if (params.has('price_min')) {
+      const v = parseFloat(params.get('price_min'));
+      if (!isNaN(v)) state.filterPriceMin = v;
+    }
+    if (params.has('price_max')) {
+      const v = parseFloat(params.get('price_max'));
+      if (!isNaN(v)) state.filterPriceMax = v;
+    }
     if (params.has('location')) state.filterLocation = params.get('location') || null;
   }
 
@@ -378,6 +401,10 @@ if ('serviceWorker' in navigator) {
   // can be torn down at the start of every renderCollection() call — prevents
   // the stale closure from appending old game cards when an empty tab is shown.
   let _virtualPageObserver = null;
+  // Persistent observer for heat-pulse animation on "hot" cards. Hoisted to
+  // module scope so it can be disconnected alongside _virtualPageObserver —
+  // otherwise removed cards stay alive in memory (observer holds strong refs).
+  let _heatIo = null;
 
   // ===== Error Classification =====
 
@@ -387,6 +414,7 @@ if ('serviceWorker' in navigator) {
     const sortDirBtn = document.getElementById('sort-dir');
     const gridBtn    = document.getElementById('view-grid');
     const listBtn    = document.getElementById('view-list');
+    const groupedBtn = document.getElementById('view-grouped');
 
     if (sortByEl) sortByEl.value = state.sortBy;
 
@@ -399,6 +427,7 @@ if ('serviceWorker' in navigator) {
 
     if (gridBtn) gridBtn.classList.toggle('active', state.viewMode === 'grid');
     if (listBtn) listBtn.classList.toggle('active', state.viewMode === 'list');
+    if (groupedBtn) groupedBtn.classList.toggle('active', state.viewMode === 'grouped');
 
     document.querySelectorAll('#status-pills .pill').forEach(pill => {
       pill.classList.toggle('active', pill.dataset.status === state.statusFilter);
@@ -436,6 +465,7 @@ if ('serviceWorker' in navigator) {
     bindGameNightModal();
     bindPlayersModal();
     bindExportModal();
+    bindNotifications();
     const shareBtn = document.getElementById('share-btn');
     if (shareBtn) shareBtn.addEventListener('click', openShareManageModal);
     // Check for unseen want-to-play requests and badge the share button
@@ -608,6 +638,7 @@ if ('serviceWorker' in navigator) {
     const sortDirBtn  = document.getElementById('sort-dir');
     const gridBtn     = document.getElementById('view-grid');
     const listBtn     = document.getElementById('view-list');
+    const groupedBtn  = document.getElementById('view-grouped');
 
     const debouncedSearchLoad = debounce(() => loadCollection(), 300);
     searchInput.addEventListener('input', () => {
@@ -763,6 +794,7 @@ if ('serviceWorker' in navigator) {
       state.viewMode = 'grid';
       gridBtn.classList.add('active');
       listBtn.classList.remove('active');
+      if (groupedBtn) groupedBtn.classList.remove('active');
       saveCollectionPrefs();
       syncUrlParams();
       renderCollection();
@@ -772,10 +804,23 @@ if ('serviceWorker' in navigator) {
       state.viewMode = 'list';
       listBtn.classList.add('active');
       gridBtn.classList.remove('active');
+      if (groupedBtn) groupedBtn.classList.remove('active');
       saveCollectionPrefs();
       syncUrlParams();
       renderCollection();
     });
+
+    if (groupedBtn) {
+      groupedBtn.addEventListener('click', () => {
+        state.viewMode = 'grouped';
+        groupedBtn.classList.add('active');
+        gridBtn.classList.remove('active');
+        listBtn.classList.remove('active');
+        saveCollectionPrefs();
+        syncUrlParams();
+        renderCollection();
+      });
+    }
 
     // Density toggle (grid only)
     const densityToggle = document.getElementById('density-toggle');
@@ -806,6 +851,7 @@ if ('serviceWorker' in navigator) {
       }
       gridBtn.addEventListener('click', _syncDensityToggle);
       listBtn.addEventListener('click', _syncDensityToggle);
+      if (groupedBtn) groupedBtn.addEventListener('click', _syncDensityToggle);
       _syncDensityToggle();
       // Apply saved density
       _setDensity(state.gridDensity || 'large');
@@ -1091,17 +1137,42 @@ if ('serviceWorker' in navigator) {
             <label class="form-label" for="bs-notes">Notes</label>
             <textarea id="bs-notes" class="form-textarea" rows="2" placeholder="Optional"></textarea>
           </div>
+          <div class="form-group" style="margin-top:12px">
+            <label class="inline-toggle" style="cursor:pointer">
+              <input type="checkbox" id="bs-coop"> Cooperative game
+            </label>
+          </div>
+          <div id="bs-coop-fields" style="display:none">
+            <div class="form-group" style="margin-top:8px">
+              <label class="form-label">Outcome</label>
+              <div class="ql-coop-outcome">
+                ${[['win','🏆 Win'],['loss','❌ Loss'],['draw','🤝 Draw'],['incomplete','⏹ Incomplete']].map(([v,l]) => `<label class="inline-toggle" style="cursor:pointer; margin-right:1rem"><input type="radio" name="bs-outcome" value="${v}"> ${l}</label>`).join('')}
+              </div>
+            </div>
+            <div class="form-group" style="margin-top:8px">
+              <label class="form-label" for="bs-scenario">Scenario / Difficulty</label>
+              <input type="text" id="bs-scenario" class="form-input" placeholder="optional" autocomplete="off">
+            </div>
+          </div>
           <button class="btn btn-primary" id="bs-submit" style="margin-top:16px;width:100%">Log Session</button>
         </div>
       </div>`;
     openModal(inner);
     inner.querySelector('#bulk-session-close').addEventListener('click', closeModal);
+    const bsCoop = inner.querySelector('#bs-coop');
+    const bsCoopFields = inner.querySelector('#bs-coop-fields');
+    bsCoop.addEventListener('change', () => { bsCoopFields.style.display = bsCoop.checked ? '' : 'none'; });
     inner.querySelector('#bs-submit').addEventListener('click', async () => {
+      const isCoop = bsCoop.checked;
+      const outcomeEl = inner.querySelector('input[name="bs-outcome"]:checked');
       const body = {
         game_ids: ids,
         played_at: document.getElementById('bs-date').value,
         duration_minutes: parseInt(document.getElementById('bs-duration').value, 10) || undefined,
         notes: document.getElementById('bs-notes').value.trim() || undefined,
+        cooperative: isCoop || undefined,
+        outcome: isCoop ? (outcomeEl ? outcomeEl.value : undefined) : undefined,
+        scenario: isCoop ? (document.getElementById('bs-scenario').value.trim() || undefined) : undefined,
       };
       try {
         await API.bulkSession(body);
@@ -1341,6 +1412,27 @@ if ('serviceWorker' in navigator) {
       state.filterCategories.forEach(c => {
         chips.push({ type: 'category', label: c, value: c });
       });
+      state.filterLabels.forEach(l => {
+        chips.push({ type: 'label', label: l, value: l });
+      });
+      state.filterDesigners.forEach(d => {
+        chips.push({ type: 'designer', label: d, value: d });
+      });
+      state.filterPublishers.forEach(p => {
+        chips.push({ type: 'publisher', label: p, value: p });
+      });
+      if (state.filterCondition) {
+        chips.push({ type: 'condition', label: state.filterCondition, value: state.filterCondition });
+      }
+      if (state.filterLoaned === true) {
+        chips.push({ type: 'loaned', label: 'Loaned Out' });
+      }
+      if (state.filterPriceMin != null) {
+        chips.push({ type: 'priceMin', label: `≥ $${state.filterPriceMin}`, value: state.filterPriceMin });
+      }
+      if (state.filterPriceMax != null) {
+        chips.push({ type: 'priceMax', label: `≤ $${state.filterPriceMax}`, value: state.filterPriceMax });
+      }
       if (state.filterLocation !== null) {
         chips.push({ type: 'location', label: _locationLabel(state.filterLocation), value: state.filterLocation });
       }
@@ -1367,6 +1459,13 @@ if ('serviceWorker' in navigator) {
             case 'time': state.filterTime = null; break;
             case 'mechanic': state.filterMechanics = state.filterMechanics.filter(m => m !== value); break;
             case 'category': state.filterCategories = state.filterCategories.filter(c => c !== value); break;
+            case 'label': state.filterLabels = state.filterLabels.filter(l => l !== value); break;
+            case 'designer': state.filterDesigners = state.filterDesigners.filter(d => d !== value); break;
+            case 'publisher': state.filterPublishers = state.filterPublishers.filter(p => p !== value); break;
+            case 'condition': state.filterCondition = null; break;
+            case 'loaned': state.filterLoaned = null; break;
+            case 'priceMin': state.filterPriceMin = null; break;
+            case 'priceMax': state.filterPriceMax = null; break;
             case 'location': state.filterLocation = null; break;
           }
           saveCollectionPrefs();
@@ -1383,6 +1482,13 @@ if ('serviceWorker' in navigator) {
     if (state.filterTime !== null) parts.push(`≤ ${state.filterTime} min`);
     if (state.filterMechanics.length > 0) parts.push(pluralize(state.filterMechanics.length, 'mechanic'));
     if (state.filterCategories.length > 0) parts.push(pluralize(state.filterCategories.length, 'category', 'categories'));
+    if (state.filterLabels.length > 0) parts.push(pluralize(state.filterLabels.length, 'label'));
+    if (state.filterDesigners.length > 0) parts.push(pluralize(state.filterDesigners.length, 'designer'));
+    if (state.filterPublishers.length > 0) parts.push(pluralize(state.filterPublishers.length, 'publisher'));
+    if (state.filterCondition) parts.push(state.filterCondition);
+    if (state.filterLoaned === true) parts.push('Loaned Out');
+    if (state.filterPriceMin != null) parts.push(`≥ $${state.filterPriceMin}`);
+    if (state.filterPriceMax != null) parts.push(`≤ $${state.filterPriceMax}`);
     if (state.filterLocation !== null) parts.push(_locationLabel(state.filterLocation));
     label.textContent = `Filters: ${parts.join(' · ')}`;
     bar.style.display = 'flex';
@@ -1518,6 +1624,8 @@ if ('serviceWorker' in navigator) {
     // empty tab (their stale closures would otherwise append old game cards).
     _virtualPageObserver?.disconnect();
     _virtualPageObserver = null;
+    _heatIo?.disconnect();
+    _heatIo = null;
     document.getElementById('virtual-sentinel')?.remove();
     document.getElementById('server-load-more')?.remove();
 
@@ -1570,6 +1678,7 @@ if ('serviceWorker' in navigator) {
           <rect x="173" y="58" width="20" height="24" rx="2" fill="var(--bg-4)" opacity="0.5"/>
         </svg>
         <p class="empty-search-text">${escapeHtml(emptyMessage)}</p>
+        <div id="search-suggestions" style="display:none" class="search-suggestions"></div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center">${clearBtn}${addActionHtml}</div>
       </div>`;
       document.getElementById('no-results-clear-filters')?.addEventListener('click', () => {
@@ -1588,6 +1697,28 @@ if ('serviceWorker' in navigator) {
           if (nameInput) { nameInput.value = term; nameInput.focus(); }
         }, 100);
       });
+      // "Did you mean?" suggestions — fetch close-match game names when search
+      // finds no results and no filters are active.
+      if (state.search && !filtersActive) {
+        const term = state.search;
+        API.searchSuggestions(term).then(({ suggestions }) => {
+          if (suggestions && suggestions.length && state.search === term) {
+            const sugEl = document.getElementById('search-suggestions');
+            if (!sugEl) return;
+            const links = suggestions.map(s => `<button class="suggestion-chip" type="button">${escapeHtml(s)}</button>`).join('');
+            sugEl.innerHTML = `<span class="suggestion-label">Did you mean:</span> ${links}`;
+            sugEl.style.display = 'block';
+            sugEl.querySelectorAll('.suggestion-chip').forEach(btn => {
+              btn.addEventListener('click', () => {
+                const searchInput = document.getElementById('collection-search');
+                if (searchInput) searchInput.value = btn.textContent;
+                state.search = btn.textContent;
+                renderCollection();
+              });
+            });
+          }
+        }).catch(() => {});
+      }
     if (currentCollectionDisplayPrefs.show_recently_played !== false) {
       renderRecentlyPlayedShelf();
     }
@@ -1615,6 +1746,91 @@ if ('serviceWorker' in navigator) {
     container.className = state.viewMode === 'grid' ? 'games-grid' : 'games-list';
     if (state.viewMode === 'grid' && state.gridDensity && state.gridDensity !== 'large') {
       container.classList.add(`density-${state.gridDensity}`);
+    }
+
+    // Grouped view: base games with nested expansion rows.
+    if (state.viewMode === 'grouped') {
+      container.className = 'games-grouped';
+      // Build expansion map from the full games list (expansions may be filtered out
+      // of `filtered` when showExpansions is false, so always use state.games).
+      const expansionsByParent = {};
+      for (const g of state.games) {
+        if (g.parent_game_id) {
+          (expansionsByParent[g.parent_game_id] ||= []).push(g);
+        }
+      }
+      // In grouped view, only base games (no parent) are primary cards.
+      const baseGames = filtered.filter(g => !g.parent_game_id);
+
+      function _buildGroupedCard(game) {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'grouped-game-wrapper';
+        const gameWithMeta = Object.assign({}, game, { _expansionCount: game.expansion_count || 0 });
+        const card = buildGameListItem(gameWithMeta);
+        card.tabIndex = 0;
+        card.addEventListener('keydown', e => {
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openGameModal(game); }
+        });
+        if (state.bulkMode) {
+          card.style.position = 'relative';
+          const cb = document.createElement('div');
+          cb.className = 'bulk-checkbox';
+          cb.setAttribute('role', 'checkbox');
+          cb.setAttribute('aria-checked', state.selectedGameIds.has(game.id) ? 'true' : 'false');
+          cb.setAttribute('aria-label', `Select ${game.name}`);
+          cb.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>';
+          card.insertBefore(cb, card.firstChild);
+          if (state.selectedGameIds.has(game.id)) card.classList.add('selected');
+        }
+        wrapper.appendChild(card);
+
+        const exps = expansionsByParent[game.id] || [];
+        if (exps.length > 0) {
+          const toggle = document.createElement('button');
+          toggle.className = 'expansion-toggle';
+          toggle.type = 'button';
+          toggle.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="chevron"><polyline points="6 9 12 15 18 9"/></svg> ${exps.length} expansion${exps.length > 1 ? 's' : ''} <span class="rolled-up-plays">(${game.rolled_up_session_count || 0} plays total)</span>`;
+          const expList = document.createElement('div');
+          expList.className = 'expansion-list';
+          expList.style.display = 'none';
+          exps.forEach(exp => {
+            const expCard = buildGameListItem(exp);
+            expCard.tabIndex = 0;
+            expCard.addEventListener('keydown', e => {
+              if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openGameModal(exp); }
+            });
+            expCard.addEventListener('click', () => openGameModal(exp));
+            expList.appendChild(expCard);
+          });
+          toggle.addEventListener('click', () => {
+            const isOpen = expList.style.display !== 'none';
+            expList.style.display = isOpen ? 'none' : 'block';
+            toggle.classList.toggle('open', !isOpen);
+          });
+          wrapper.appendChild(toggle);
+          wrapper.appendChild(expList);
+        }
+        return wrapper;
+      }
+
+      state.virtualOffset = 0;
+      const firstPage = baseGames.slice(0, VIRTUAL_PAGE_SIZE);
+      firstPage.forEach(game => container.appendChild(_buildGroupedCard(game)));
+      if (baseGames.length > VIRTUAL_PAGE_SIZE) {
+        state.virtualOffset = VIRTUAL_PAGE_SIZE;
+        const sentinel = document.createElement('div');
+        sentinel.className = 'virtual-sentinel';
+        container.appendChild(sentinel);
+        const io = new IntersectionObserver((entries) => {
+          if (!entries[0].isIntersecting) return;
+          const next = baseGames.slice(state.virtualOffset, state.virtualOffset + VIRTUAL_PAGE_SIZE);
+          if (next.length === 0) { io.disconnect(); return; }
+          next.forEach(game => container.insertBefore(_buildGroupedCard(game), sentinel));
+          state.virtualOffset += next.length;
+        });
+        io.observe(sentinel);
+      }
+      return;
     }
 
     // Build a single card element for a game
@@ -1655,15 +1871,18 @@ if ('serviceWorker' in navigator) {
           obs.unobserve(e.target);
         });
       }, { threshold: 0.04 });
-      // Separate persistent observer to pause/resume heat-pulse animation
-      const heatIo = new IntersectionObserver(entries => {
-        entries.forEach(e => e.target.classList.toggle('in-view', e.isIntersecting));
-      }, { threshold: 0.01 });
+      // Separate persistent observer to pause/resume heat-pulse animation.
+      // Uses the module-level _heatIo so it can be disconnected in renderCollection teardown.
+      if (!_heatIo) {
+        _heatIo = new IntersectionObserver(entries => {
+          entries.forEach(e => e.target.classList.toggle('in-view', e.isIntersecting));
+        }, { threshold: 0.01 });
+      }
       cards.forEach((c, i) => {
         c.dataset.observed = '1';
         c.style.transitionDelay = `${Math.min(i * 28, 250)}ms`;
         io.observe(c);
-        if (c.dataset.heat === '3') heatIo.observe(c);
+        if (c.dataset.heat === '3') _heatIo.observe(c);
       });
     }
 
@@ -1768,11 +1987,19 @@ if ('serviceWorker' in navigator) {
 
     const onShareGame = async () => {
       const tokens = await API.getShareTokens() ?? [];
-      let permanent = tokens.find(t => !t.expires_at);
-      if (!permanent) {
-        permanent = await API.createShareToken('My Collection', null);
+      const permanent = tokens.find(t => !t.expires_at);
+      let rawToken;
+      if (permanent) {
+        rawToken = localStorage.getItem(`share_token_${permanent.token}`);
       }
-      return `${window.location.origin}/share.html?token=${permanent.token}&game=${game.id}`;
+      if (!rawToken) {
+        const newToken = await API.createShareToken('Game Share', 10);
+        rawToken = newToken.token;
+        if (newToken.token_hash) {
+          localStorage.setItem(`share_token_${newToken.token_hash}`, rawToken);
+        }
+      }
+      return `${window.location.origin}/share.html#token=${rawToken}&game=${game.id}`;
     };
 
     const navIdx = effectiveMode === 'view' ? _findGameNavIndex(game.id) : -1;
@@ -2009,9 +2236,24 @@ if ('serviceWorker' in navigator) {
             <label class="inline-toggle" style="cursor:pointer">
               <input type="checkbox" id="ql-solo"> Solo game
             </label>
+            <label class="inline-toggle" style="cursor:pointer; margin-left:1rem">
+              <input type="checkbox" id="ql-coop"> Cooperative
+            </label>
+          </div>
+          <div id="ql-coop-fields" style="display:none">
+            <div class="quick-log-field ql-full">
+              <label>Outcome</label>
+              <div class="ql-coop-outcome">
+                ${[['win','🏆 Win'],['loss','❌ Loss'],['draw','🤝 Draw'],['incomplete','⏹ Incomplete']].map(([v,l]) => `<label class="inline-toggle" style="cursor:pointer; margin-right:1rem"><input type="radio" name="ql-outcome" value="${v}"> ${l}</label>`).join('')}
+              </div>
+            </div>
+            <div class="quick-log-field ql-full">
+              <label for="ql-scenario">Scenario / Difficulty</label>
+              <input type="text" id="ql-scenario" class="form-input" placeholder="optional" autocomplete="off">
+            </div>
           </div>
           <div id="ql-multiplayer-fields">
-            <div class="quick-log-field ql-full">
+            <div class="quick-log-field ql-full" id="ql-winner-field">
               <label for="ql-winner">Winner</label>
               <input type="text" id="ql-winner" class="form-input" placeholder="optional" autocomplete="off" list="ql-player-list">
               <datalist id="ql-player-list">${state.players.map(p => `<option value="${escapeHtml(p)}">`).join('')}</datalist>
@@ -2085,11 +2327,26 @@ if ('serviceWorker' in navigator) {
       });
     }
 
-    // Solo mode toggle
+    // Solo / Cooperative mode toggle
     const soloCheckbox = overlay.querySelector('#ql-solo');
+    const coopCheckbox = overlay.querySelector('#ql-coop');
     const multiplayerFields = overlay.querySelector('#ql-multiplayer-fields');
+    const coopFields = overlay.querySelector('#ql-coop-fields');
+    const winnerField = overlay.querySelector('#ql-winner-field');
+    function applyMode() {
+      const isSolo = soloCheckbox.checked;
+      const isCoop = coopCheckbox.checked;
+      multiplayerFields.style.display = isSolo ? 'none' : '';
+      coopFields.style.display = isCoop ? '' : 'none';
+      if (winnerField) winnerField.style.display = isCoop ? 'none' : '';
+    }
     soloCheckbox.addEventListener('change', () => {
-      multiplayerFields.style.display = soloCheckbox.checked ? 'none' : '';
+      if (soloCheckbox.checked && coopCheckbox.checked) coopCheckbox.checked = false;
+      applyMode();
+    });
+    coopCheckbox.addEventListener('change', () => {
+      if (coopCheckbox.checked && soloCheckbox.checked) soloCheckbox.checked = false;
+      applyMode();
     });
 
     // Player chip toggle + scores
@@ -2131,6 +2388,8 @@ if ('serviceWorker' in navigator) {
       const dateVal = overlay.querySelector('#ql-date').value;
       if (!dateVal) { showToast('Please enter a date.', 'error'); return; }
       const isSolo = overlay.querySelector('#ql-solo').checked;
+      const isCoop = overlay.querySelector('#ql-coop').checked;
+      const outcomeEl = overlay.querySelector('input[name="ql-outcome"]:checked');
       // Merge chip selection + text input
       const chipSelected = (!isSolo && chipsContainer)
         ? [...chipsContainer.querySelectorAll('.ql-player-chip.active')].map(c => c.dataset.name)
@@ -2153,8 +2412,11 @@ if ('serviceWorker' in navigator) {
         duration_minutes: parseInt(overlay.querySelector('#ql-duration').value, 10) || null,
         notes:            overlay.querySelector('#ql-notes').value.trim() || null,
         session_rating:   qlRp ? (parseInt(qlRp.dataset.value, 10) || null) : null,
-        winner:           isSolo ? null : (overlay.querySelector('#ql-winner').value.trim() || null),
+        winner:           (isSolo || isCoop) ? null : (overlay.querySelector('#ql-winner').value.trim() || null),
         solo:             isSolo,
+        cooperative:      isCoop,
+        outcome:          isCoop ? (outcomeEl ? outcomeEl.value : null) : null,
+        scenario:         isCoop ? (overlay.querySelector('#ql-scenario').value.trim() || null) : null,
         player_names:     playerNames.length ? playerNames : null,
         scores:           Object.keys(scores).length ? scores : null,
       }, () => {
@@ -3752,8 +4014,12 @@ if ('serviceWorker' in navigator) {
     const mechRow = document.getElementById('filter-mechanics-chips');
     const catRow  = document.getElementById('filter-categories-chips');
     const locRow  = document.getElementById('filter-locations-chips');
+    const labelRow    = document.getElementById('filter-labels-chips');
+    const designerRow = document.getElementById('filter-designers-chips');
+    const publisherRow = document.getElementById('filter-publishers-chips');
 
     function buildChips(container, items, stateKey) {
+      if (!container) return;
       container.innerHTML = '';
       if (!items.length) { container.style.display = 'none'; return; }
       container.style.display = 'flex';
@@ -3779,6 +4045,7 @@ if ('serviceWorker' in navigator) {
     }
 
     function buildLocationChips(container) {
+      if (!container) return;
       container.innerHTML = '';
       const locs = (state.collectionStats && state.collectionStats.locations) || {};
       const entries = Object.entries(locs).sort((a, b) => {
@@ -3813,10 +4080,16 @@ if ('serviceWorker' in navigator) {
     const collStats = state.collectionStats || {};
     const topM = Object.keys(collStats.mechanic_counts || {}).slice(0, 10);
     const topC = Object.keys(collStats.category_counts || {}).slice(0, 10);
+    const topL = Object.keys(collStats.label_counts || {}).slice(0, 10);
+    const topD = Object.keys(collStats.designer_counts || {}).slice(0, 10);
+    const topP = Object.keys(collStats.publisher_counts || {}).slice(0, 10);
 
     buildChips(mechRow, topM, 'filterMechanics');
     buildChips(catRow,  topC, 'filterCategories');
     if (locRow) buildLocationChips(locRow);
+    buildChips(labelRow,    topL, 'filterLabels');
+    buildChips(designerRow, topD, 'filterDesigners');
+    buildChips(publisherRow, topP, 'filterPublishers');
   }
 
   function bindFilters() {
@@ -3828,6 +4101,10 @@ if ('serviceWorker' in navigator) {
     const timeEl     = document.getElementById('filter-time');
     const clearBtn   = document.getElementById('filter-clear-all');
     const toggleBtn  = document.getElementById('filter-toggle-btn');
+    const loanedBtn  = document.getElementById('filter-loaned');
+    const conditionEl = document.getElementById('filter-condition');
+    const priceMinEl = document.getElementById('filter-price-min');
+    const priceMaxEl = document.getElementById('filter-price-max');
 
     function openPanel()  { renderFilterChips(); panel.classList.add('open'); syncFilterActiveBar(); }
     function closePanel() { if (!hasActiveFilters()) panel.classList.remove('open'); syncFilterActiveBar(); }
@@ -3856,6 +4133,47 @@ if ('serviceWorker' in navigator) {
       syncUrlParams();
       scheduleFilteredLoad();
     });
+
+    if (loanedBtn) {
+      loanedBtn.classList.toggle('active', state.filterLoaned === true);
+      loanedBtn.addEventListener('click', () => {
+        state.filterLoaned = (state.filterLoaned === true) ? null : true;
+        loanedBtn.classList.toggle('active', state.filterLoaned === true);
+        clearBulkSelection();
+        saveCollectionPrefs();
+        syncUrlParams();
+        scheduleFilteredLoad();
+        syncFilterActiveBar();
+      });
+    }
+
+    if (conditionEl) {
+      conditionEl.value = state.filterCondition || '';
+      conditionEl.addEventListener('change', () => {
+        state.filterCondition = conditionEl.value || null;
+        clearBulkSelection();
+        saveCollectionPrefs();
+        syncUrlParams();
+        scheduleFilteredLoad();
+        syncFilterActiveBar();
+      });
+    }
+
+    let priceDebounce;
+    function onPriceInput() {
+      clearTimeout(priceDebounce);
+      priceDebounce = setTimeout(() => {
+        state.filterPriceMin = priceMinEl.value ? parseFloat(priceMinEl.value) : null;
+        state.filterPriceMax = priceMaxEl.value ? parseFloat(priceMaxEl.value) : null;
+        clearBulkSelection();
+        saveCollectionPrefs();
+        syncUrlParams();
+        scheduleFilteredLoad();
+        syncFilterActiveBar();
+      }, 300);
+    }
+    if (priceMinEl) priceMinEl.addEventListener('input', onPriceInput);
+    if (priceMaxEl) priceMaxEl.addEventListener('input', onPriceInput);
 
     let playerDebounce, timeDebounce;
 
@@ -3887,11 +4205,22 @@ if ('serviceWorker' in navigator) {
       state.filterTime = null;
       state.filterMechanics = [];
       state.filterCategories = [];
+      state.filterLabels = [];
+      state.filterDesigners = [];
+      state.filterPublishers = [];
+      state.filterCondition = null;
+      state.filterLoaned = null;
+      state.filterPriceMin = null;
+      state.filterPriceMax = null;
       state.filterLocation = null;
       saveCollectionPrefs();
       neverBtn.classList.remove('active');
       playersEl.value = '';
       timeEl.value = '';
+      if (loanedBtn) loanedBtn.classList.remove('active');
+      if (conditionEl) conditionEl.value = '';
+      if (priceMinEl) priceMinEl.value = '';
+      if (priceMaxEl) priceMaxEl.value = '';
       document.querySelectorAll('.filter-chips-row .filter-pill')
         .forEach(el => el.classList.remove('active'));
       panel.classList.remove('open');
@@ -3925,8 +4254,15 @@ if ('serviceWorker' in navigator) {
     playersEl.addEventListener('input', syncFilterActiveBar);
     timeEl.addEventListener('input', syncFilterActiveBar);
     neverBtn.addEventListener('click', syncFilterActiveBar);
-    // Sync when panel opens/closes
-    document.addEventListener('mousedown', () => setTimeout(syncFilterActiveBar, 50));
+    // Sync when panel opens/closes — but only schedule the timeout when the
+    // filter bar is actually visible, to avoid allocating a task on every
+    // mousedown anywhere on the page.
+    document.addEventListener('mousedown', () => {
+      const bar = document.getElementById('filter-active-bar');
+      if (bar && bar.style.display === 'flex') {
+        setTimeout(syncFilterActiveBar, 50);
+      }
+    });
   }
 
   // ===== Game Night Planner =====
@@ -3955,24 +4291,46 @@ if ('serviceWorker' in navigator) {
           </button>
         </div>
         <div class="modal-body">
+          <div class="gn-mode-toggle" style="margin-bottom:12px">
+            <button class="btn btn-ghost btn-sm gn-mode-btn active" data-mode="suggest" type="button">Single Pick</button>
+            <button class="btn btn-ghost btn-sm gn-mode-btn" data-mode="plan" type="button">Plan Evening</button>
+          </div>
           <div class="form-grid" style="margin-bottom:12px">
             <div class="form-group">
               <label class="form-label" for="gn-players">Player count</label>
               <input type="number" id="gn-players" class="form-input" min="1" max="20" placeholder="Any" value="${state.filterPlayers || ''}" autocomplete="off">
             </div>
-            <div class="form-group">
-              <label class="form-label" for="gn-time">Max time (min)</label>
+            <div class="form-group gn-time-group">
+              <label class="form-label" for="gn-time"><span class="gn-time-label-suggest">Max time (min)</span><span class="gn-time-label-plan" style="display:none">Total time (min)</span></label>
               <input type="number" id="gn-time" class="form-input" min="1" placeholder="Any" value="${state.filterTime || ''}" autocomplete="off">
             </div>
           </div>
+          <div class="gn-plan-options" style="display:none;margin-bottom:12px">
+            <label class="form-label" style="margin-bottom:6px">Options</label>
+            <label class="gn-player-chip"><input type="checkbox" id="gn-teach-mode"> Teach a new game (favor unplayed, low-complexity)</label>
+          </div>
           ${playerOptions ? `<div class="gn-player-select" style="margin-bottom:12px"><div class="form-label" style="margin-bottom:6px">Or pick players</div><div class="gn-player-chips">${playerOptions}</div></div>` : ''}
-          <button class="btn btn-primary" id="gn-suggest-btn" style="width:100%">Suggest Games</button>
+          <button class="btn btn-primary" id="gn-suggest-btn" style="width:100%"><span class="gn-btn-label-suggest">Suggest Games</span><span class="gn-btn-label-plan" style="display:none">Plan Evening</span></button>
           <div id="gn-results"></div>
         </div>
       </div>`;
 
     modal.style.display = 'flex';
     pushModalOpen();
+
+    let gnMode = 'suggest';
+    function updateMode(mode) {
+      gnMode = mode;
+      inner.querySelectorAll('.gn-mode-btn').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
+      const isPlan = mode === 'plan';
+      inner.querySelector('.gn-plan-options').style.display = isPlan ? '' : 'none';
+      inner.querySelector('.gn-time-label-suggest').style.display = isPlan ? 'none' : '';
+      inner.querySelector('.gn-time-label-plan').style.display = isPlan ? '' : 'none';
+      inner.querySelector('.gn-btn-label-suggest').style.display = isPlan ? 'none' : '';
+      inner.querySelector('.gn-btn-label-plan').style.display = isPlan ? '' : 'none';
+      inner.querySelector('#gn-results').innerHTML = '';
+    }
+    inner.querySelectorAll('.gn-mode-btn').forEach(b => b.addEventListener('click', () => updateMode(b.dataset.mode)));
 
     let trapHandler = null;
     requestAnimationFrame(() => {
@@ -4013,6 +4371,48 @@ if ('serviceWorker' in navigator) {
       const dismissedIds = new Set();
       let allSuggestions = [];
       const useGroupRecommend = selectedPlayerIds.length > 0;
+      const isPlanMode = gnMode === 'plan';
+      const teachMode = !!inner.querySelector('#gn-teach-mode')?.checked;
+
+      function renderPlanTimeline(plan) {
+        if (!plan.slots || !plan.slots.length) {
+          resultsEl.innerHTML = `<p class="game-night-empty">${escapeHtml(plan.note || 'No suitable games found.')}</p>`;
+          return;
+        }
+        const roleIcons = { opener: '🎬', main: '🎯', closer: '🏁' };
+        const roleLabels = { opener: 'Opener', main: 'Main', closer: 'Closer' };
+        const totalLabel = plan.feasible
+          ? `Total: ${plan.total_est_minutes} min`
+          : `Total: ${plan.total_est_minutes} min (over budget)`;
+        const chips = [];
+        if (playerCount) chips.push(`👥 ${playerCount}`);
+        if (selectedPlayerIds.length) chips.push(`👥 ${selectedPlayerIds.length} players`);
+        if (teachMode) chips.push('📖 Teach mode');
+        const chipsHtml = chips.length ? `<div class="gn-active-filters">${chips.map(c => `<span class="reason-chip">${escapeHtml(c)}</span>`).join('')}</div>` : '';
+        const noteHtml = plan.note ? `<p class="gn-plan-note">${escapeHtml(plan.note)}</p>` : '';
+
+        resultsEl.innerHTML = chipsHtml + noteHtml + `<div class="gn-plan-timeline">${plan.slots.map(s => `
+          <div class="gn-plan-slot gn-plan-${escapeHtml(s.role)}" data-game-id="${s.game.id}" role="button" tabindex="0" aria-label="${escapeHtml(roleLabels[s.role] || s.role)}: ${escapeHtml(s.game.name)}">
+            <div class="gn-plan-role">${roleIcons[s.role] || ''} ${escapeHtml(roleLabels[s.role] || s.role)}</div>
+            <div class="gn-plan-thumb">${isSafeUrl(s.game.image_url) ? `<img src="${escapeHtml(s.game.image_url)}" alt="" loading="lazy">` : placeholderSvg()}</div>
+            <div class="gn-plan-info">
+              <div class="gn-plan-name">${escapeHtml(s.game.name)}</div>
+              <div class="gn-plan-meta">
+                <span>~${s.est_minutes} min</span>
+                ${s.game.difficulty ? `<span>Difficulty ${+s.game.difficulty.toFixed(2)}</span>` : ''}
+                ${s.game.user_rating ? `<span>★ ${s.game.user_rating.toFixed(1)}</span>` : ''}
+              </div>
+              ${s.reason ? `<div class="gn-plan-reason"><span class="reason-chip">${escapeHtml(s.reason)}</span></div>` : ''}
+            </div>
+          </div>`).join('')}</div><div class="gn-plan-total">${escapeHtml(totalLabel)}</div>`;
+
+        resultsEl.querySelectorAll('.gn-plan-slot').forEach(el => {
+          el.addEventListener('click', () => {
+            const game = state.games.find(g => g.id === +el.dataset.gameId);
+            if (game) { close(); openGameModal(game); }
+          });
+        });
+      }
 
       function renderResults(suggestions) {
         const visible = suggestions.filter(s => !dismissedIds.has(s.id));
@@ -4088,6 +4488,16 @@ if ('serviceWorker' in navigator) {
 
       async function fetchAndRender() {
         try {
+          if (isPlanMode) {
+            if (!maxMinutes) {
+              resultsEl.innerHTML = '<p class="game-night-empty">Enter a total time budget to plan an evening.</p>';
+              return;
+            }
+            const effectivePlayerCount = playerCount || (selectedPlayerIds.length || null);
+            const plan = await API.planEvening(maxMinutes, effectivePlayerCount, selectedPlayerIds, teachMode);
+            renderPlanTimeline(plan);
+            return;
+          }
           let suggestions;
           if (useGroupRecommend) {
             const resp = await API.groupRecommend(selectedPlayerIds, maxMinutes, null);
@@ -4110,8 +4520,9 @@ if ('serviceWorker' in navigator) {
       }
 
       // Show thinking animation immediately
-      resultsEl.innerHTML = `<div class="gn-thinking"><div class="gn-dice">🎲</div><p>Finding your game…</p></div>`;
-      await withLoading(btn, fetchAndRender, 'Finding games…');
+      const thinkingMsg = isPlanMode ? 'Planning your evening…' : 'Finding your game…';
+      resultsEl.innerHTML = `<div class="gn-thinking"><div class="gn-dice">🎲</div><p>${escapeHtml(thinkingMsg)}</p></div>`;
+      await withLoading(btn, fetchAndRender, isPlanMode ? 'Planning…' : 'Finding games…');
     });
   }
 
@@ -5046,7 +5457,12 @@ if ('serviceWorker' in navigator) {
         return;
       }
       const origin = window.location.origin;
-      container.innerHTML = list.map(t => `
+      container.innerHTML = list.map(t => {
+        const rawToken = localStorage.getItem(`share_token_${t.token}`);
+        const shareUrl = rawToken ? `${origin}/share.html#token=${rawToken}` : '';
+        const placeholder = rawToken ? '' : ' placeholder="Token not available — created in another session"';
+        const copyDisabled = rawToken ? '' : ' disabled';
+        return `
         <div class="share-token-row${isExpired(t) ? ' expired' : ''}" data-token="${escapeHtml(t.token)}">
           <div class="share-token-info">
             <div class="share-token-header">
@@ -5054,13 +5470,14 @@ if ('serviceWorker' in navigator) {
               ${t.created_at ? `<span class="share-token-created">Created ${escapeHtml(formatDate(t.created_at))}</span>` : ''}
               ${formatExpiry(t)}
             </div>
-            <input class="share-link-input" type="text" readonly value="${escapeHtml(origin + '/share.html?token=' + t.token)}" aria-label="Share link">
+            <input class="share-link-input" type="text" readonly value="${escapeHtml(shareUrl)}" aria-label="Share link"${placeholder}>
           </div>
           <div class="share-token-actions">
-            <button class="btn btn-secondary btn-sm share-copy-btn"${isExpired(t) ? ' disabled' : ''}>Copy</button>
+            <button class="btn btn-secondary btn-sm share-copy-btn"${isExpired(t) ? ' disabled' : copyDisabled}>Copy</button>
             <button class="btn btn-danger btn-sm share-revoke-btn">Revoke</button>
           </div>
-        </div>`).join('');
+        </div>`;
+      }).join('');
 
       container.querySelectorAll('.share-copy-btn').forEach(btn => {
         btn.addEventListener('click', () => {
@@ -5092,6 +5509,7 @@ if ('serviceWorker' in navigator) {
           try {
             await withLoading(btn, async () => {
               await API.deleteShareToken(token);
+              localStorage.removeItem(`share_token_${token}`);
               tokens = tokens.filter(t => t.token !== token);
               renderTokenList(container, tokens);
               showToast('Share link removed.', 'success');
@@ -5199,7 +5617,10 @@ if ('serviceWorker' in navigator) {
             <div class="share-request-from">${escapeHtml(r.visitor_name || 'Anonymous')} · <span class="share-request-time">${escapeHtml(timeAgo(r.created_at))}</span></div>
             ${r.message ? `<div class="share-request-message">${escapeHtml(r.message)}</div>` : ''}
           </div>
-          ${!r.seen ? `<button class="btn btn-ghost btn-sm share-seen-btn">Mark seen</button>` : '<span class="share-seen-label">Seen</span>'}
+          <div class="share-request-actions">
+            ${!r.seen ? `<button class="btn btn-ghost btn-sm share-seen-btn">Mark seen</button>` : '<span class="share-seen-label">Seen</span>'}
+            <button class="btn btn-ghost btn-sm share-delete-btn" title="Delete request" aria-label="Delete request">✕</button>
+          </div>
         </div>`).join('');
       container.querySelectorAll('.share-seen-btn').forEach(btn => {
         btn.addEventListener('click', async () => {
@@ -5213,6 +5634,26 @@ if ('serviceWorker' in navigator) {
               row.classList.add('seen');
               btn.replaceWith(Object.assign(document.createElement('span'), { className: 'share-seen-label', textContent: 'Seen' }));
               // Remove badge from tab if all seen
+              const remaining = requests.filter(r => !r.seen).length;
+              const badge = el.querySelector('.share-req-badge');
+              if (badge) { remaining > 0 ? (badge.textContent = remaining) : badge.remove(); }
+              updateShareBadge();
+            }, '…');
+          } catch (_) { /* non-fatal */ }
+        });
+      });
+      container.querySelectorAll('.share-delete-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const row = btn.closest('.share-request-row');
+          const id = parseInt(row.dataset.id, 10);
+          try {
+            await withLoading(btn, async () => {
+              await API.deleteRequest(id);
+              requests = requests.filter(r => r.id !== id);
+              row.remove();
+              if (!requests.length) {
+                renderRequests(container, requests);
+              }
               const remaining = requests.filter(r => !r.seen).length;
               const badge = el.querySelector('.share-req-badge');
               if (badge) { remaining > 0 ? (badge.textContent = remaining) : badge.remove(); }
@@ -5238,7 +5679,15 @@ if ('serviceWorker' in navigator) {
       try {
         await withLoading(btn, async () => {
           const newToken = await API.createShareToken(label, expiresIn);
-          tokens.push(newToken);
+          if (newToken.token_hash) {
+            localStorage.setItem(`share_token_${newToken.token_hash}`, newToken.token);
+          }
+          tokens.push({
+            token: newToken.token_hash || newToken.token,
+            label: newToken.label,
+            created_at: newToken.created_at,
+            expires_at: newToken.expires_at,
+          });
           renderTokenList(tokenListEl, tokens);
           el.querySelector('#share-label-input').value = '';
           el.querySelector('#share-expiry-select').value = '';
@@ -5329,5 +5778,170 @@ if ('serviceWorker' in navigator) {
   _syncPauseUI();
 
   document.getElementById('retake-tour-btn')?.addEventListener('click', resetTour);
+
+  // ── Notifications ────────────────────────────────────────────────────────
+  let _notifState = { notifications: [], dropdownOpen: false };
+
+  const _NOTIF_ICONS = {
+    dormant_favorite: '📅',
+    unplayed_owned: '📦',
+    goal_progress: '🎯',
+    stale_collection: '⏰',
+    streak_risk: '🔥',
+    loan_overdue: '📤',
+  };
+
+  function _renderNotifications() {
+    const body = document.getElementById('notif-dropdown-body');
+    const empty = document.getElementById('notif-dropdown-empty');
+    if (!body || !empty) return;
+    body.innerHTML = '';
+    if (_notifState.notifications.length === 0) {
+      empty.style.display = 'block';
+      body.style.display = 'none';
+      return;
+    }
+    empty.style.display = 'none';
+    body.style.display = 'block';
+    for (const n of _notifState.notifications) {
+      const item = document.createElement('div');
+      item.className = 'notif-item' + (n.read_at ? '' : ' unread');
+      const icon = _NOTIF_ICONS[n.kind] || '🔔';
+      const timeStr = n.created_at ? new Date(n.created_at).toLocaleDateString('en-CA', { month: 'short', day: 'numeric' }) : '';
+      item.innerHTML = `
+        <div class="notif-item-icon">${icon}</div>
+        <div class="notif-item-content">
+          <div class="notif-item-title">${escapeHtml(n.title)}</div>
+          ${n.body ? `<div class="notif-item-body">${escapeHtml(n.body)}</div>` : ''}
+          <div class="notif-item-time">${timeStr}</div>
+          <div class="notif-item-actions">
+            ${n.read_at ? '' : `<button class="notif-mark-read" data-id="${n.id}">Mark read</button>`}
+            ${n.action_url ? `<button class="notif-open" data-url="${escapeHtml(n.action_url)}">Open</button>` : ''}
+            <button class="notif-delete" data-id="${n.id}">Delete</button>
+          </div>
+        </div>`;
+      body.appendChild(item);
+    }
+    body.querySelectorAll('.notif-mark-read').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const id = parseInt(btn.dataset.id, 10);
+        try {
+          await API.markNotificationRead(id);
+          _notifState.notifications = _notifState.notifications.map(n =>
+            n.id === id ? { ...n, read_at: new Date().toISOString() } : n
+          );
+          _renderNotifications();
+          _updateNotifBadge();
+        } catch (err) { console.warn('Failed to mark notification read:', err); }
+      });
+    });
+    body.querySelectorAll('.notif-delete').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const id = parseInt(btn.dataset.id, 10);
+        try {
+          await API.deleteNotification(id);
+          _notifState.notifications = _notifState.notifications.filter(n => n.id !== id);
+          _renderNotifications();
+          _updateNotifBadge();
+        } catch (err) { console.warn('Failed to delete notification:', err); }
+      });
+    });
+    body.querySelectorAll('.notif-open').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const url = btn.dataset.url;
+        if (url) {
+          _closeNotifDropdown();
+          if (url.startsWith('/game/')) {
+            const gid = parseInt(url.split('/game/')[1], 10);
+            if (!isNaN(gid)) {
+              const g = state.games.find(x => x.id === gid);
+              if (g) openGameModal(g);
+              else switchView('collection');
+            }
+          } else if (url.includes('view=stats')) {
+            switchView('stats');
+          } else if (url.includes('view=add')) {
+            switchView('add');
+          } else {
+            switchView('collection');
+          }
+        }
+      });
+    });
+  }
+
+  function _updateNotifBadge() {
+    const badge = document.getElementById('nav-bell-badge');
+    if (!badge) return;
+    const unread = _notifState.notifications.filter(n => !n.read_at).length;
+    if (unread > 0) {
+      badge.textContent = unread > 99 ? '99+' : String(unread);
+      badge.style.display = 'flex';
+    } else {
+      badge.style.display = 'none';
+    }
+  }
+
+  function _closeNotifDropdown() {
+    const dropdown = document.getElementById('notif-dropdown');
+    const bell = document.getElementById('nav-bell');
+    if (dropdown) dropdown.style.display = 'none';
+    if (bell) bell.setAttribute('aria-expanded', 'false');
+    _notifState.dropdownOpen = false;
+  }
+
+  async function _loadNotifications() {
+    try {
+      _notifState.notifications = await API.refreshNotifications();
+      _renderNotifications();
+      _updateNotifBadge();
+    } catch (err) {
+      console.warn('Failed to load notifications:', err);
+    }
+  }
+
+  function bindNotifications() {
+    const bell = document.getElementById('nav-bell');
+    const dropdown = document.getElementById('notif-dropdown');
+    const readAllBtn = document.getElementById('notif-read-all');
+    if (!bell || !dropdown) return;
+
+    bell.addEventListener('click', (e) => {
+      e.stopPropagation();
+      _notifState.dropdownOpen = !_notifState.dropdownOpen;
+      dropdown.style.display = _notifState.dropdownOpen ? 'flex' : 'none';
+      bell.setAttribute('aria-expanded', String(_notifState.dropdownOpen));
+      if (_notifState.dropdownOpen && _notifState.notifications.length === 0) {
+        _loadNotifications();
+      }
+    });
+
+    document.addEventListener('click', (e) => {
+      if (_notifState.dropdownOpen && !dropdown.contains(e.target) && !bell.contains(e.target)) {
+        _closeNotifDropdown();
+      }
+    });
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && _notifState.dropdownOpen) _closeNotifDropdown();
+    });
+
+    if (readAllBtn) {
+      readAllBtn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        try {
+          await API.markAllNotificationsRead();
+          _notifState.notifications = _notifState.notifications.map(n => ({ ...n, read_at: new Date().toISOString() }));
+          _renderNotifications();
+          _updateNotifBadge();
+        } catch (err) { console.warn('Failed to mark all read:', err); }
+      });
+    }
+
+    _loadNotifications();
+  }
 
 })();

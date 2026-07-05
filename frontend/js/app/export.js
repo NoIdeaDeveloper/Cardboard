@@ -20,6 +20,12 @@ export function openExportModal() {
       <div class="modal-body">
         <p style="color:var(--text-2);font-size:0.85rem;margin-bottom:12px">Download your collection, sessions, and players in standard formats.</p>
         <div class="form-group" style="margin-bottom:10px">
+          <label style="display:flex;align-items:center;gap:8px;font-size:0.85rem;color:var(--text-2);margin-bottom:10px;cursor:pointer">
+            <input type="checkbox" id="export-include-private" style="margin:0">
+            Include private fields in CSV (prices, location, notes, condition)
+          </label>
+        </div>
+        <div class="form-group" style="margin-bottom:10px">
           <button class="btn btn-secondary" id="export-json-btn" style="width:100%">Export as JSON</button>
         </div>
         <div class="form-group" style="margin-bottom:10px">
@@ -36,7 +42,9 @@ export function openExportModal() {
     window.open('/api/games/export/json', '_blank');
   });
   inner.querySelector('#export-csv-btn').addEventListener('click', () => {
-    window.open('/api/games/export/csv', '_blank');
+    const includePrivate = inner.querySelector('#export-include-private').checked;
+    const url = '/api/games/export/csv' + (includePrivate ? '?include_private=true' : '');
+    window.open(url, '_blank');
   });
   inner.querySelector('#export-images-btn').addEventListener('click', () => {
     window.open('/api/games/export/images', '_blank');

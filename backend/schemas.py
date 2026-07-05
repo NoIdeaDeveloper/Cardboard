@@ -128,11 +128,48 @@ class GameResponse(GameBase):
     heat_level: int = 0        # 0–3, computed from last_played
     expansion_count: int = 0   # number of direct child games
     session_count: int = 0     # total logged play sessions
+    rolled_up_session_count: int = 0  # base game sessions + all descendant expansion sessions
 
     model_config = ConfigDict(from_attributes=True)
 
 
 GameOut = GameResponse
+
+
+class GameShareResponse(BaseModel):
+    """Whitelisted game fields for public share-token responses and static HTML export.
+
+    Excludes all financial (purchase_price, purchase_location, sale_price, target_price),
+    personal (user_notes, location, loaned_to, loaned_at), physical (condition, edition),
+    and internal (image_cached, image_ext, image_cache_status, date_added, date_modified,
+    share_hidden, instructions_filename, parent_game_id, priority) fields.
+    """
+    id: int
+    name: str
+    status: str
+    year_published: Optional[int] = None
+    min_players: Optional[int] = None
+    max_players: Optional[int] = None
+    min_playtime: Optional[int] = None
+    max_playtime: Optional[int] = None
+    difficulty: Optional[float] = None
+    description: Optional[str] = None
+    image_url: Optional[str] = None
+    thumbnail_url: Optional[str] = None
+    categories: Optional[str] = None
+    mechanics: Optional[str] = None
+    designers: Optional[str] = None
+    publishers: Optional[str] = None
+    labels: Optional[str] = None
+    user_rating: Optional[float] = None
+    bgg_id: Optional[int] = None
+    bgg_rating: Optional[float] = None
+    parent_game_name: Optional[str] = None
+    heat_level: int = 0
+    expansion_count: int = 0
+    session_count: int = 0
+
+    model_config = ConfigDict(from_attributes=True)
 
 
 class CollectionStatsResponse(BaseModel):
@@ -185,6 +222,9 @@ class PlaySessionCreate(BaseModel):
     session_rating: Optional[int] = Field(None, ge=1, le=5)
     winner: Optional[str] = Field(None, max_length=255)
     solo: bool = False
+    cooperative: bool = False
+    outcome: Optional[str] = Field(None, pattern='^(win|loss|draw|incomplete)$')
+    scenario: Optional[str] = Field(None, max_length=255)
     player_names: Optional[List[Annotated[str, StringConstraints(max_length=255)]]] = Field(None, max_length=50)  # names to link/create as players
     scores: Optional[Dict[str, int]] = None  # player_name -> score
 
@@ -198,6 +238,9 @@ class BulkSessionCreate(BaseModel):
     session_rating: Optional[int] = Field(None, ge=1, le=5)
     winner: Optional[str] = Field(None, max_length=255)
     solo: bool = False
+    cooperative: bool = False
+    outcome: Optional[str] = Field(None, pattern='^(win|loss|draw|incomplete)$')
+    scenario: Optional[str] = Field(None, max_length=255)
     player_names: Optional[List[Annotated[str, StringConstraints(max_length=255)]]] = Field(None, max_length=50)
     scores: Optional[Dict[str, int]] = None
 
@@ -210,6 +253,9 @@ class PlaySessionUpdate(BaseModel):
     session_rating: Optional[int] = Field(None, ge=1, le=5)
     winner: Optional[str] = Field(None, max_length=255)
     solo: Optional[bool] = None
+    cooperative: Optional[bool] = None
+    outcome: Optional[str] = Field(None, pattern='^(win|loss|draw|incomplete)$')
+    scenario: Optional[str] = Field(None, max_length=255)
     player_names: Optional[List[Annotated[str, StringConstraints(max_length=255)]]] = Field(None, max_length=50)
     scores: Optional[Dict[str, int]] = None
 
@@ -382,6 +428,7 @@ class WantToPlayResponse(BaseModel):
     game_id: int
     game_name: str
     visitor_name: Optional[str] = None
+    visitor_ip: Optional[str] = None
     message: Optional[str] = None
     seen: bool
     created_at: datetime
@@ -391,6 +438,7 @@ class WantToPlayResponse(BaseModel):
 
 class ShareTokenResponse(BaseModel):
     token: str
+    token_hash: Optional[str] = None
     label: Optional[str] = None
     created_at: Optional[datetime] = None
     expires_at: Optional[datetime] = None
@@ -679,3 +727,58 @@ class TradeSellEntry(BaseModel):
 
 class TradeSellResponse(BaseModel):
     games: List[TradeSellEntry] = []
+
+
+class PlanEveningRequest(BaseModel):
+    total_minutes: int = Field(..., ge=15, le=1440)
+    player_count: Optional[int] = Field(None, ge=1, le=20)
+    player_ids: List[int] = Field(default_factory=list, max_length=10)
+    teach_mode: bool = False
+
+
+class PlanEveningSlot(BaseModel):
+    role: str  # "opener" | "main" | "closer"
+    game: GameOut
+    est_minutes: int
+    reason: str = ""
+
+
+class PlanEveningResponse(BaseModel):
+    slots: List[PlanEveningSlot] = []
+    total_est_minutes: int = 0
+    feasible: bool = True
+    note: str = ""
+
+
+class MaintenanceLogEntry(BaseModel):
+    id: int
+    game_id: int
+    kind: str  # "missing_piece" | "sleeve" | "damage" | "other"
+    description: str
+    status: str  # "open" | "resolved"
+    created_at: Optional[datetime] = None
+    resolved_at: Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class MaintenanceLogCreate(BaseModel):
+    kind: str = Field(..., pattern='^(missing_piece|sleeve|damage|other)$')
+    description: str = Field(..., min_length=1, max_length=2000)
+
+
+class MaintenanceLogUpdate(BaseModel):
+    status: Optional[str] = Field(None, pattern='^(open|resolved)$')
+    description: Optional[str] = Field(None, min_length=1, max_length=2000)
+
+
+class NotificationResponse(BaseModel):
+    id: int
+    kind: str
+    title: str
+    body: Optional[str] = None
+    action_url: Optional[str] = None
+    created_at: Optional[datetime] = None
+    read_at: Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)

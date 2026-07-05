@@ -413,3 +413,121 @@ def group_recommend(body: schemas.GroupRecommendRequest, db: Session = Depends(g
         ))
 
     return schemas.GroupRecommendResponse(recommendations=results)
+
+
+@router.post("/plan-evening", response_model=schemas.PlanEveningResponse)
+def plan_evening(body: schemas.PlanEveningRequest, db: Session = Depends(get_db)):
+    """Plan a game-night sequence (opener + main + closer) that fits a time budget."""
+    from datetime import date, timedelta
+
+    today = date.today()
+    recent_cutoff = today - timedelta(days=30)
+
+    # Candidate games: owned, non-expansion, supports player count
+    query = db.query(models.Game).filter(
+        models.Game.status == "owned",
+        models.Game.parent_game_id.is_(None),
+    )
+    if body.player_count:
+        query = query.filter(
+            (models.Game.min_players.is_(None)) | (models.Game.min_players <= body.player_count),
+            (models.Game.max_players.is_(None)) | (models.Game.max_players >= body.player_count),
+        )
+    games = query.all()
+    if not games:
+        return schemas.PlanEveningResponse(slots=[], total_est_minutes=0, feasible=False,
+                                            note="No owned games match the player count.")
+
+    game_ids = [g.id for g in games]
+    session_counts = {
+        row.game_id: row.count
+        for row in db.query(
+            models.PlaySession.game_id,
+            func.count(models.PlaySession.id).label("count")
+        ).filter(models.PlaySession.game_id.in_(game_ids)).group_by(models.PlaySession.game_id).all()
+    }
+
+    def _est_minutes(g: models.Game) -> int:
+        if g.min_playtime and g.max_playtime:
+            return (g.min_playtime + g.max_playtime) // 2
+        if g.min_playtime:
+            return g.min_playtime
+        return 45  # default estimate
+
+    def _score(g: models.Game, role: str) -> tuple[float, list[str]]:
+        score = 0.0
+        reasons = []
+        est = _est_minutes(g)
+        count = session_counts.get(g.id, 0)
+
+        if role == "opener":
+            if est <= 30: score += 3.0; reasons.append("Quick starter")
+            elif est <= 45: score += 1.5
+            else: score -= 2.0
+            if g.difficulty and g.difficulty <= 2.0: score += 2.0; reasons.append("Easy to teach")
+            if g.last_played and g.last_played >= recent_cutoff: score += 1.0; reasons.append("Recently played — rules fresh")
+        elif role == "main":
+            if 45 <= est <= 90: score += 3.0
+            elif 30 <= est <= 120: score += 1.5
+            else: score -= 1.0
+            if g.user_rating and g.user_rating >= 8: score += 3.0; reasons.append("Personal favorite")
+            elif g.user_rating and g.user_rating >= 6: score += 1.5
+            if g.difficulty and g.difficulty >= 2.5: score += 1.0; reasons.append("Substantial")
+            if count == 0: score += 1.0; reasons.append("Unplayed gem")
+        elif role == "closer":
+            if est <= 30: score += 2.5; reasons.append("Quick closer")
+            elif est <= 45: score += 1.0
+            else: score -= 1.5
+            if g.difficulty and g.difficulty <= 2.5: score += 1.5; reasons.append("Light wind-down")
+
+        if body.teach_mode and role == "main":
+            if count == 0 and g.difficulty is not None and g.difficulty <= 3.0:
+                score += 5.0; reasons.append("Teachable new game")
+
+        return score, reasons
+
+    # Try to fill 3 slots: opener + main + closer
+    # Greedy approach: score each game for each role, pick best non-overlapping combo
+    remaining = body.total_minutes
+    chosen: list[tuple[str, models.Game, int, str]] = []
+    used_ids: set[int] = set()
+
+    for role in ("opener", "main", "closer"):
+        best = None
+        for g in games:
+            if g.id in used_ids:
+                continue
+            est = _est_minutes(g)
+            # Time budget check (closers get slack — allow if total would be within +15min)
+            slack = 15 if role == "closer" else 0
+            if est > remaining + slack:
+                continue
+            sc, reasons = _score(g, role)
+            if best is None or sc > best[0]:
+                best = (sc, g, est, reasons)
+        if best is None:
+            continue
+        _, g, est, reasons = best
+        chosen.append((role, g, est, " · ".join(reasons[:2]) if reasons else ""))
+        used_ids.add(g.id)
+        remaining -= est
+
+    if not chosen:
+        return schemas.PlanEveningResponse(slots=[], total_est_minutes=0, feasible=False,
+                                            note=f"No games fit within {body.total_minutes} min.")
+
+    total_est = sum(est for _, _, est, _ in chosen)
+    feasible = total_est <= body.total_minutes
+    note = "" if feasible else f"Exceeds budget by {total_est - body.total_minutes} min — drop a slot or shorten the main."
+
+    slots = [
+        schemas.PlanEveningSlot(
+            role=role,
+            game=schemas.GameOut.model_validate(g),
+            est_minutes=est,
+            reason=reason,
+        )
+        for role, g, est, reason in chosen
+    ]
+    return schemas.PlanEveningResponse(slots=slots, total_est_minutes=total_est,
+                                        feasible=feasible, note=note)

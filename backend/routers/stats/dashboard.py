@@ -1,11 +1,14 @@
 """Main stats dashboard endpoint (GET /api/stats)."""
+import json
 import logging
+import threading
+import time
 from datetime import date, timedelta
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, Response
-from sqlalchemy import case, func
+from sqlalchemy import and_, case, func, or_
 from sqlalchemy.orm import Session
 
 from constants import NO_LOCATION_SENTINEL
@@ -16,6 +19,14 @@ from utils import collection_etag
 
 logger = logging.getLogger("cardboard.stats")
 router = APIRouter(prefix="/api", tags=["stats"])
+
+# TTL cache for the stats payload, keyed on the collection ETag. The ETag changes
+# on any game/session write (via _sync_last_played bumping date_modified), so the
+# cache naturally invalidates on data changes. The TTL prevents stale entries from
+# accumulating when the ETag changes frequently (e.g. rapid session logging).
+_stats_cache: dict[str, tuple[float, bytes]] = {}
+_stats_cache_lock = threading.Lock()
+_STATS_CACHE_TTL = 60.0  # seconds
 
 
 from routers.stats._common import _status_counts, _trade_sell_candidates
@@ -34,6 +45,19 @@ def get_stats(request: Request, db: Session = Depends(get_db)):
     etag = collection_etag(db)
     if request.headers.get("if-none-match") == etag:
         return Response(status_code=304)
+
+    # ── TTL cache check ─────────────────────────────────────────────────────
+    now = time.monotonic()
+    with _stats_cache_lock:
+        cached = _stats_cache.get(etag)
+        if cached is not None:
+            ts, body = cached
+            if now - ts < _STATS_CACHE_TTL:
+                resp = Response(content=body, media_type="application/json")
+                resp.headers["ETag"] = etag
+                resp.headers["Cache-Control"] = "private, no-cache"
+                resp.headers["X-Stats-Cache"] = "HIT"
+                return resp
 
     # ── Game counts ──────────────────────────────────────────────────────────
     by_status = _status_counts(db)
@@ -337,59 +361,49 @@ def get_stats(request: Request, db: Session = Depends(get_db)):
     ]
 
     # ── Sessions by day of week ──────────────────────────────────────────────
-    dow_rows = (
-        db.query(
-            func.strftime("%w", models.PlaySession.played_at).label("dow"),
-            func.count(models.PlaySession.id).label("count"),
-        )
-        .group_by("dow")
-        .all()
-    )
-    # Collect distinct game_ids per DOW for drill-down
-    dow_game_rows = (
+    # Single query: counts per DOW plus distinct game_ids per DOW in one pass
+    # (replaces the previous two-pass approach: one GROUP BY count + one DISTINCT).
+    dow_combined = (
         db.query(
             func.strftime("%w", models.PlaySession.played_at).label("dow"),
             models.PlaySession.game_id,
+            func.count(models.PlaySession.id).label("cnt"),
         )
-        .distinct()
+        .group_by("dow", models.PlaySession.game_id)
         .all()
     )
+    dow_counts: dict[int, int] = {}
     dow_game_ids: dict[int, list[int]] = {}
-    for dow_str, game_id in dow_game_rows:
+    for dow_str, game_id, cnt in dow_combined:
         d = int(dow_str)
+        dow_counts[d] = dow_counts.get(d, 0) + cnt
         dow_game_ids.setdefault(d, []).append(game_id)
     sessions_by_dow = [
-        schemas.SessionsByDowEntry(dow=int(dow), count=count, game_ids=dow_game_ids.get(int(dow), []))
-        for dow, count in dow_rows
+        schemas.SessionsByDowEntry(dow=d, count=dow_counts.get(d, 0), game_ids=dow_game_ids.get(d, []))
+        for d in sorted(dow_counts)
     ]
 
     # ── Sessions by day — last 52 weeks ──────────────────────────────────────
+    # Single query: counts per day plus distinct game_ids per day in one pass.
     cutoff = today - timedelta(weeks=52)
-    day_rows = (
-        db.query(
-            func.strftime("%Y-%m-%d", models.PlaySession.played_at).label("day"),
-            func.count(models.PlaySession.id).label("count"),
-        )
-        .filter(models.PlaySession.played_at >= cutoff)
-        .group_by("day")
-        .all()
-    )
-    # Collect distinct game_ids per day for drill-down
-    day_game_rows = (
+    day_combined = (
         db.query(
             func.strftime("%Y-%m-%d", models.PlaySession.played_at).label("day"),
             models.PlaySession.game_id,
+            func.count(models.PlaySession.id).label("cnt"),
         )
         .filter(models.PlaySession.played_at >= cutoff)
-        .distinct()
+        .group_by("day", models.PlaySession.game_id)
         .all()
     )
+    day_counts: dict[str, int] = {}
     day_game_ids: dict[str, list[int]] = {}
-    for day_str, game_id in day_game_rows:
+    for day_str, game_id, cnt in day_combined:
+        day_counts[day_str] = day_counts.get(day_str, 0) + cnt
         day_game_ids.setdefault(day_str, []).append(game_id)
     sessions_by_day = [
-        schemas.SessionsByDayEntry(date=r.day, count=r.count, game_ids=day_game_ids.get(r.day, []))
-        for r in day_rows
+        schemas.SessionsByDayEntry(date=day, count=day_counts[day], game_ids=day_game_ids.get(day, []))
+        for day in sorted(day_counts)
     ]
 
     # ── Shelf warmers (owned base games last played 90–365 days ago) ─────────
@@ -514,14 +528,14 @@ def get_stats(request: Request, db: Session = Depends(get_db)):
             models.Game.user_rating.isnot(None),
             models.Game.bgg_rating.isnot(None),
         )
+        .order_by(func.abs(models.Game.user_rating - models.Game.bgg_rating).desc())
+        .limit(8)
         .all()
     )
-    rating_vs_bgg = sorted(
-        [schemas.RatingDeltaEntry(id=r.id, name=r.name, delta=round(r.user_rating - r.bgg_rating, 1))
-         for r in delta_rows],
-        key=lambda e: abs(e.delta),
-        reverse=True,
-    )[:8]
+    rating_vs_bgg = [
+        schemas.RatingDeltaEntry(id=r.id, name=r.name, delta=round(r.user_rating - r.bgg_rating, 1))
+        for r in delta_rows
+    ]
 
     # ── Collection health score ───────────────────────────────────────────────
     owned_base_count = (
@@ -584,7 +598,7 @@ def get_stats(request: Request, db: Session = Depends(get_db)):
     ]
 
     # ── Play streaks (derived from sessions_by_day set) ──────────────────────
-    day_set = {r.day for r in day_rows}
+    day_set = set(day_counts.keys())
     # Daily streak — count consecutive days backwards from today
     daily_streak = 0
     check_day = today
@@ -711,14 +725,29 @@ def get_stats(request: Request, db: Session = Depends(get_db)):
 
     # ── Collection Churn Dashboard ─────────────────────────────────────────
     ever_acquired = by_status["owned"] + by_status["sold"]
-    current_year = str(today.year)
+    year_start = date(today.year, 1, 1)
+    year_end = date(today.year + 1, 1, 1)
+    # Sargable predicate: purchase_date in range OR (no purchase_date AND date_added in range).
+    # Avoids strftime on a coalesced column which defeats any index.
+    in_year = or_(
+        and_(
+            models.Game.purchase_date.isnot(None),
+            models.Game.purchase_date >= year_start,
+            models.Game.purchase_date < year_end,
+        ),
+        and_(
+            models.Game.purchase_date.is_(None),
+            models.Game.date_added >= year_start,
+            models.Game.date_added < year_end,
+        ),
+    )
     acquired_this_year, sold_this_year = db.query(
         func.count(case((
-            models.Game.status.in_(["owned", "sold"]) & (func.strftime("%Y", func.coalesce(models.Game.purchase_date, models.Game.date_added)) == current_year),
+            models.Game.status.in_(["owned", "sold"]) & in_year,
             1,
         ))),
         func.count(case((
-            (models.Game.status == "sold") & (func.strftime("%Y", func.coalesce(models.Game.purchase_date, models.Game.date_added)) == current_year),
+            (models.Game.status == "sold") & in_year,
             1,
         ))),
     ).one()
@@ -760,7 +789,7 @@ def get_stats(request: Request, db: Session = Depends(get_db)):
 
     logger.info("Stats computed: %d games, %d sessions, %d expansions", total_games, total_sessions, total_expansions)
 
-    resp = JSONResponse(content=schemas.StatsResponse(
+    payload = schemas.StatsResponse(
         total_games=total_games,
         by_status=by_status,
         total_sessions=total_sessions,
@@ -803,9 +832,17 @@ def get_stats(request: Request, db: Session = Depends(get_db)):
         dimes=dimes,
         nickels=nickels,
         quarters=quarters,
-    ).model_dump(mode="json"))
+    ).model_dump(mode="json")
+    body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+
+    with _stats_cache_lock:
+        _stats_cache.clear()
+        _stats_cache[etag] = (time.monotonic(), body)
+
+    resp = Response(content=body, media_type="application/json")
     resp.headers["ETag"] = etag
     resp.headers["Cache-Control"] = "private, no-cache"
+    resp.headers["X-Stats-Cache"] = "MISS"
     return resp
 
 

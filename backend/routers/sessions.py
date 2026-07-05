@@ -133,14 +133,18 @@ def add_session(game_id: int, session: schemas.PlaySessionCreate, db: Session = 
     get_game_or_404(game_id, db)
 
     data = session.model_dump(exclude={"player_names", "scores"})
+    # Co-op sessions have a group outcome, not an individual winner.
+    if data.get("cooperative"):
+        data["winner"] = None
     db_session = models.PlaySession(game_id=game_id, **data)
-    db_session.winner_player_id = _resolve_winner_id(session.winner, db)
+    db_session.winner_player_id = None if data.get("cooperative") else _resolve_winner_id(session.winner, db)
     db.add(db_session)
     db.flush()
 
     if session.player_names:
         _link_players(db_session.id, session.player_names, db, session.scores)
-        if session.scores:
+        # Skip Elo for co-op sessions — no competitive winner/loser dynamic.
+        if session.scores and not data.get("cooperative"):
             elo_db.apply_elo_for_new_session(session.player_names, session.scores, db_session.id, db)
 
     _sync_last_played(game_id, db, commit=False)
@@ -177,8 +181,11 @@ def update_session(session_id: int, data: schemas.PlaySessionUpdate, db: Session
     for field, value in update_data.items():
         setattr(db_session, field, value)
 
-    # Resolve winner name to player FK
-    if "winner" in update_data:
+    # Resolve winner name to player FK (skip for co-op sessions)
+    if "cooperative" in update_data and update_data["cooperative"]:
+        db_session.winner = None
+        db_session.winner_player_id = None
+    elif "winner" in update_data:
         db_session.winner_player_id = _resolve_winner_id(db_session.winner, db)
 
     if player_names is not None:
@@ -251,7 +258,10 @@ def add_bulk_session(body: schemas.BulkSessionCreate, db: Session = Depends(get_
     for game_id in body.game_ids:
         get_game_or_404(game_id, db)
     data = body.model_dump(exclude={"game_ids", "player_names", "scores"})
-    winner_id = _resolve_winner_id(body.winner, db)
+    is_coop = data.get("cooperative", False)
+    winner_id = None if is_coop else _resolve_winner_id(body.winner, db)
+    if is_coop:
+        data["winner"] = None
     db_sessions = []
     for game_id in body.game_ids:
         db_session = models.PlaySession(game_id=game_id, **data)
@@ -260,7 +270,7 @@ def add_bulk_session(body: schemas.BulkSessionCreate, db: Session = Depends(get_
         db.flush()
         if body.player_names:
             _link_players(db_session.id, body.player_names, db, body.scores)
-            if body.scores:
+            if body.scores and not is_coop:
                 elo_db.apply_elo_for_new_session(body.player_names, body.scores, db_session.id, db)
         _sync_last_played(game_id, db, commit=False)
         db_sessions.append((game_id, db_session))
