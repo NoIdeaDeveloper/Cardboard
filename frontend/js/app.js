@@ -509,7 +509,38 @@ if ('serviceWorker' in navigator) {
     });
     const initialView = location.hash.replace('#', '') || 'collection';
     const validViews = ['collection', 'add', 'stats'];
-    switchView(validViews.includes(initialView) ? initialView : 'collection');
+    const resolvedView = validViews.includes(initialView) ? initialView : 'collection';
+
+    // Pre-warm the collection load regardless of the initial view. switchView
+    // only triggers loadCollection when the user actually lands on the
+    // collection tab, so a refresh on `#stats` or `#add` would otherwise leave
+    // the static "Loading your collection…" spinner in #games-container
+    // spinning until the user manually navigates to the collection tab. The
+    // supersession guard inside loadCollection makes this duplicate of
+    // switchView's own call a no-op when they overlap.
+    if (resolvedView !== 'collection') loadCollection().catch(() => {});
+
+    switchView(resolvedView);
+
+    // Safety net: if neither code path above managed to swap out the original
+    // HTML loading spinner (e.g. a bind step above threw and short-circuited
+    // the handler before switchView ran, or the initial fetch hung), retry
+    // once after a short delay. The spinner is what buildSkeletonGrid replaces
+    // — if it is still in the DOM a moment later, we know we never entered
+    // loadCollection (or it returned early before building the skeleton).
+    setTimeout(() => {
+      const container = document.getElementById('games-container');
+      // Only retry if the *original* HTML spinner is still there. The error
+      // fallback uses the same .loading-spinner class but adds a Retry button
+      // with id=collection-retry-btn — we don't want to auto-retry an explicit
+      // error that the user has already seen.
+      const stillOriginalSpinner =
+        container &&
+        state.games.length === 0 &&
+        container.querySelector(':scope > .loading-spinner') &&
+        !container.querySelector('#collection-retry-btn');
+      if (stillOriginalSpinner) loadCollection().catch(() => {});
+    }, 2500);
 
     // Deep-link into a game modal after collection loads
     const _gameIdParam = new URLSearchParams(location.search).get('game');
