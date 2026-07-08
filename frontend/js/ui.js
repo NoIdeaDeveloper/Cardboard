@@ -1637,11 +1637,16 @@ function buildModalContent(opts) {
     const baseDropdown = el.querySelector('#base-game-dropdown');
 
     if (baseSearch) {
+      const _baseEsc = (e) => { if (e.key === 'Escape') baseDropdown.style.display = 'none'; };
       baseSearch.addEventListener('input', () => {
         const q = baseSearch.value.trim().toLowerCase();
         if (!q) { baseDropdown.style.display = 'none'; return; }
         const matches = baseGameOptions.filter(g => g.name.toLowerCase().includes(q)).slice(0, 8);
-        if (!matches.length) { baseDropdown.style.display = 'none'; return; }
+        if (!matches.length) {
+          baseDropdown.innerHTML = '<div class="base-game-dropdown-empty">No matching games</div>';
+          baseDropdown.style.display = 'block';
+          return;
+        }
         baseDropdown.innerHTML = matches.map(g =>
           `<button class="base-game-option" data-id="${g.id}" data-name="${escapeHtml(g.name)}">${escapeHtml(g.name)}</button>`
         ).join('');
@@ -1657,6 +1662,8 @@ function buildModalContent(opts) {
         baseDropdown.style.display = 'none';
         baseClear.style.display = '';
       });
+
+      baseSearch.addEventListener('keydown', _baseEsc);
 
       baseSearch.addEventListener('blur', () => {
         setTimeout(() => { baseDropdown.style.display = 'none'; }, 150);
@@ -2286,7 +2293,7 @@ function openGalleryLightbox(images, startIndex = 0) {
     setTimeout(() => {
       overlay.remove();
       if (prevFocus && prevFocus.focus) prevFocus.focus();
-    }, 180);
+    }, 200);
   }
 
   show(startIndex);
@@ -2331,7 +2338,7 @@ const _INFO_BTN_SVG = `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor
 function _sectionInfoHeader(titleHtml, ariaLabel, innerHtml) {
   return `<div class="health-header">
     <h3 class="stats-section-title" style="margin:0">${titleHtml}</h3>
-    <button class="health-info-btn" aria-label="${ariaLabel}" aria-expanded="false">${_INFO_BTN_SVG}</button>
+    <button class="health-info-btn" aria-label="${ariaLabel}" aria-expanded="false" aria-haspopup="true">${_INFO_BTN_SVG}</button>
   </div>
   <div class="health-info-popover" hidden>
     <div class="health-info-popover-inner">${innerHtml}</div>
@@ -2890,7 +2897,7 @@ function buildStatsView(stats, games, prefs = {}, onPrefsChange = null, goals = 
 
       <div class="health-header">
         <h3 class="stats-section-title" style="margin:0">Collection Health</h3>
-        <button class="health-info-btn" aria-label="How is this score calculated?" aria-expanded="false">
+        <button class="health-info-btn" aria-label="How is this score calculated?" aria-expanded="false" aria-haspopup="true">
           <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" width="15" height="15" aria-hidden="true">
             <circle cx="10" cy="10" r="8.5"/>
             <path d="M9.5 9.5h.5a.5.5 0 0 1 .5.5v3" stroke-linecap="round"/>
@@ -3070,7 +3077,7 @@ function buildStatsView(stats, games, prefs = {}, onPrefsChange = null, goals = 
     <div class="stats-section" data-section="added_by_month"${!currentPrefs.show_added_by_month ? ' style="display:none"' : ''}>
       <div class="stats-section-header">
         <h3 class="stats-section-title">Added by Month</h3>
-        <button class="health-info-btn" aria-label="About Added by Month" aria-expanded="false">${_INFO_BTN_SVG}</button>
+        <button class="health-info-btn" aria-label="About Added by Month" aria-expanded="false" aria-haspopup="true">${_INFO_BTN_SVG}</button>
         <label class="stats-section-inline-toggle" style="margin-left:auto">
           <input type="checkbox" id="added-wishlist-toggle"${addedIncludeWishlist ? ' checked' : ''}>
           Include wishlist
@@ -3418,7 +3425,7 @@ function buildStatsView(stats, games, prefs = {}, onPrefsChange = null, goals = 
       <div class="stats-section" data-section="goals" id="stats-goals">
         <div class="stats-section-header">
           <div class="stats-section-title">Goals &amp; Challenges</div>
-          <button class="health-info-btn" aria-label="About Goals &amp; Challenges" aria-expanded="false">${_INFO_BTN_SVG}</button>
+          <button class="health-info-btn" aria-label="About Goals &amp; Challenges" aria-expanded="false" aria-haspopup="true">${_INFO_BTN_SVG}</button>
           <button class="btn btn-secondary btn-sm" id="add-goal-btn" style="margin-left:auto">+ Add Goal</button>
         </div>
         <div class="health-info-popover" hidden>
@@ -3544,7 +3551,7 @@ function buildStatsView(stats, games, prefs = {}, onPrefsChange = null, goals = 
     ${insightsHtml}
     <div class="stats-header">
       <h1 class="stats-title">Collection Stats</h1>
-      <button class="stats-settings-btn" id="stats-settings-btn" title="Configure sections" aria-label="Configure sections">
+      <button class="stats-settings-btn" id="stats-settings-btn" aria-label="Configure sections" aria-haspopup="true" aria-expanded="false">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <circle cx="12" cy="12" r="3"/>
           <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/>
@@ -3628,10 +3635,18 @@ function buildStatsView(stats, games, prefs = {}, onPrefsChange = null, goals = 
   const settingsList  = el.querySelector('#stats-settings-list');
   const sectionsEl    = el.querySelector('#stats-sections');
 
+  const _settingsEsc = (e) => {
+    if (e.key === 'Escape' && settingsPanel.style.display !== 'none') {
+      settingsPanel.style.display = 'none';
+      settingsBtn.classList.remove('active');
+    }
+  };
+  document.addEventListener('keydown', _settingsEsc);
   settingsBtn.addEventListener('click', () => {
     const open = settingsPanel.style.display !== 'none';
     settingsPanel.style.display = open ? 'none' : 'block';
     settingsBtn.classList.toggle('active', !open);
+    settingsBtn.setAttribute('aria-expanded', !open ? 'true' : 'false');
   });
 
   let dragSrcKey = null;

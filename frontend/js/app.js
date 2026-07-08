@@ -273,15 +273,20 @@ if ('serviceWorker' in navigator) {
       const players = formatPlayers(g.min_players, g.max_players);
       const playtime = formatPlaytime(g.min_playtime, g.max_playtime);
       container.innerHTML = `
-        ${thumb}
-        <div class="recommend-body">
-          <p class="recommend-title">${escapeHtml(g.name)}</p>
-          <p class="recommend-meta">${players ? escapeHtml(players) : ''}${players && playtime ? ' \u2022 ' : ''}${playtime ? escapeHtml(playtime) : ''}</p>
-          <p class="recommend-reason">${escapeHtml(rec.reason_detail)}</p>
+        <div class="recommend-header">
+          <p class="recommend-title-label">Play This Next</p>
         </div>
-        <div class="recommend-actions">
-          <button class="recommend-btn" data-recommend-play="${g.id}">Play</button>
-          <button class="recommend-btn secondary" data-recommend-skip="${g.id}">Not Now</button>
+        <div class="recommend-main">
+          ${thumb}
+          <div class="recommend-body">
+            <p class="recommend-title">${escapeHtml(g.name)}</p>
+            <p class="recommend-meta">${players ? escapeHtml(players) : ''}${players && playtime ? ' \u2022 ' : ''}${playtime ? escapeHtml(playtime) : ''}</p>
+            <p class="recommend-reason">${escapeHtml(rec.reason_detail)}</p>
+          </div>
+          <div class="recommend-actions">
+            <button class="recommend-btn" data-recommend-play="${g.id}">Play</button>
+            <button class="recommend-btn secondary" data-recommend-skip="${g.id}">Not Now</button>
+          </div>
         </div>`;
       container.style.display = 'flex';
       container.querySelector('[data-recommend-play]')?.addEventListener('click', () => {
@@ -592,11 +597,17 @@ if ('serviceWorker' in navigator) {
     const moreBtn = document.getElementById('bottom-nav-more');
     const moreMenu = document.getElementById('mobile-more-menu');
     if (moreBtn && moreMenu) {
-      moreBtn.addEventListener('click', () => moreMenu.classList.toggle('open'));
-      // Any click inside the menu (item chosen) or outside it closes the menu
-      document.addEventListener('click', (e) => {
-        if (!e.target.closest('#bottom-nav-more')) moreMenu.classList.remove('open');
+      const _closeMoreMenu = () => { moreMenu.classList.remove('open'); moreBtn.setAttribute('aria-expanded', 'false'); };
+      const _moreEsc = (e) => { if (e.key === 'Escape') _closeMoreMenu(); };
+      moreBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const isOpen = moreMenu.classList.toggle('open');
+        moreBtn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+        if (isOpen) document.addEventListener('keydown', _moreEsc, { once: true });
+        else document.removeEventListener('keydown', _moreEsc);
       });
+      document.addEventListener('click', (e) => { if (!e.target.closest('#mobile-more-menu') && !e.target.closest('#bottom-nav-more')) _closeMoreMenu(); });
+      moreMenu.querySelectorAll('.mobile-more-item').forEach(item => item.addEventListener('click', _closeMoreMenu));
     }
   }
 
@@ -2150,7 +2161,7 @@ if ('serviceWorker' in navigator) {
       closed = true;
       ac.abort();
       popover.classList.remove('open');
-      setTimeout(() => { popover.remove(); popModalOpen(); if (prevFocus && prevFocus.focus) prevFocus.focus(); }, 180);
+      setTimeout(() => { popover.remove(); popModalOpen(); if (prevFocus && prevFocus.focus) prevFocus.focus(); }, 200);
     }
 
     function onKeyDown(e) {
@@ -2984,7 +2995,7 @@ if ('serviceWorker' in navigator) {
     const backdrop = document.getElementById('players-modal-backdrop');
     const prevFocus = document.activeElement;
 
-    inner.innerHTML = '<p style="padding:1rem;opacity:0.6">Loading…</p>';
+    inner.innerHTML = '<div class="loading-spinner" style="padding:40px 20px;"><div class="spinner"></div><p>Loading players…</p></div>';
     modal.style.display = 'flex';
     pushModalOpen();
 
@@ -3008,7 +3019,7 @@ if ('serviceWorker' in navigator) {
       modal.classList.remove('open');
       if (trapHandler) { modal.removeEventListener('keydown', trapHandler); trapHandler = null; }
       if (prevFocus) prevFocus.focus();
-      setTimeout(() => { modal.style.display = 'none'; popModalOpen(); }, 200);
+      setTimeout(() => { modal.style.display = 'none'; inner.innerHTML = ''; popModalOpen(); }, 200);
       backdrop.removeEventListener('click', close);
       document.removeEventListener('keydown', onKeyDown);
     }
@@ -3359,11 +3370,12 @@ if ('serviceWorker' in navigator) {
         });
         picker.appendChild(img);
       });
-      picker.style.cssText = `position:fixed;top:${rect.bottom + 8}px;left:${rect.left + rect.width / 2}px;transform:translateX(-50%);z-index:9999;`;
+      picker.style.cssText = `position:fixed;top:${rect.bottom + 8}px;left:${rect.left + rect.width / 2}px;transform:translateX(-50%);`;
       picker.setAttribute('role', 'listbox');
       picker.setAttribute('aria-label', 'Choose avatar preset');
       document.body.appendChild(picker);
       panel._avatarPicker = picker;
+      panel._avatarTrigger = panel.querySelector('.avatar-preset-trigger');
 
       const onOutside = e => {
         if (!picker.contains(e.target) && !e.target.closest('.avatar-preset-trigger')) {
@@ -3394,6 +3406,10 @@ if ('serviceWorker' in navigator) {
         }
         panel._avatarPicker.remove();
         panel._avatarPicker = null;
+        if (panel._avatarTrigger) {
+          panel._avatarTrigger.focus();
+          panel._avatarTrigger = null;
+        }
       }
     }
 
@@ -3433,7 +3449,7 @@ if ('serviceWorker' in navigator) {
           <h3 class="player-profile-name">${escapeHtml(player.name)}</h3>
         </div>
         <div class="player-profile-body">
-          <div class="player-profile-loading">Loading stats…</div>
+          <div class="player-profile-loading"><div class="spinner" style="margin:0 auto 10px;"></div>Loading stats…</div>
         </div>`;
 
       inner.querySelector('.modal-content-panel').appendChild(panel);
@@ -3759,6 +3775,9 @@ if ('serviceWorker' in navigator) {
 
     document.addEventListener('click', e => {
       if (!e.target.closest('#bgg-search-bar')) results.style.display = 'none';
+    });
+    bggInput.addEventListener('keydown', e => {
+      if (e.key === 'Escape') results.style.display = 'none';
     });
   }
 
@@ -4226,8 +4245,8 @@ if ('serviceWorker' in navigator) {
     const priceMinEl = document.getElementById('filter-price-min');
     const priceMaxEl = document.getElementById('filter-price-max');
 
-    function openPanel()  { renderFilterChips(); panel.classList.add('open'); syncFilterActiveBar(); }
-    function closePanel() { if (!hasActiveFilters()) panel.classList.remove('open'); syncFilterActiveBar(); }
+    function openPanel()  { renderFilterChips(); panel.classList.add('open'); syncFilterActiveBar(); toggleBtn.setAttribute('aria-expanded', 'true'); }
+    function closePanel() { if (!hasActiveFilters()) panel.classList.remove('open'); syncFilterActiveBar(); toggleBtn.setAttribute('aria-expanded', 'false'); }
 
     searchEl.addEventListener('click', openPanel);
 
@@ -4235,11 +4254,15 @@ if ('serviceWorker' in navigator) {
       e.stopPropagation();
       if (panel.classList.contains('open')) {
         panel.classList.remove('open');
+        toggleBtn.setAttribute('aria-expanded', 'false');
       } else {
         openPanel();
       }
       syncFilterActiveBar();
     });
+
+    const _filterEsc = (e) => { if (e.key === 'Escape' && panel.classList.contains('open')) { panel.classList.remove('open'); toggleBtn.setAttribute('aria-expanded', 'false'); syncFilterActiveBar(); } };
+    document.addEventListener('keydown', _filterEsc);
 
     document.addEventListener('mousedown', e => {
       if (!panel.contains(e.target) && !searchWrap.contains(e.target) && e.target !== toggleBtn && !toggleBtn.contains(e.target)) closePanel();
@@ -4410,28 +4433,32 @@ if ('serviceWorker' in navigator) {
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="18" height="18"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
           </button>
         </div>
-        <div class="modal-body">
-          <div class="gn-mode-toggle" role="group" aria-label="Game night mode" style="margin-bottom:12px">
-            <button class="btn btn-ghost btn-sm gn-mode-btn active" data-mode="suggest" type="button" aria-pressed="true">Single Pick</button>
-            <button class="btn btn-ghost btn-sm gn-mode-btn" data-mode="plan" type="button" aria-pressed="false">Plan Evening</button>
+        <div class="gn-mode-toggle" role="group" aria-label="Game night mode" style="margin-bottom:12px">
+          <button class="btn btn-ghost btn-sm gn-mode-btn active" data-mode="suggest" type="button" aria-pressed="true">Single Pick</button>
+          <button class="btn btn-ghost btn-sm gn-mode-btn" data-mode="plan" type="button" aria-pressed="false">Plan Evening</button>
+        </div>
+        <div class="form-grid" style="margin-bottom:12px">
+          <div class="form-group">
+            <label class="form-label" for="gn-players">Player count</label>
+            <input type="number" id="gn-players" class="form-input" min="1" max="20" placeholder="Any" value="${state.filterPlayers || ''}" autocomplete="off">
           </div>
-          <div class="form-grid" style="margin-bottom:12px">
-            <div class="form-group">
-              <label class="form-label" for="gn-players">Player count</label>
-              <input type="number" id="gn-players" class="form-input" min="1" max="20" placeholder="Any" value="${state.filterPlayers || ''}" autocomplete="off">
-            </div>
-            <div class="form-group gn-time-group">
-              <label class="form-label" for="gn-time"><span class="gn-time-label-suggest">Max time (min)</span><span class="gn-time-label-plan" style="display:none">Total time (min)</span></label>
-              <input type="number" id="gn-time" class="form-input" min="1" placeholder="Any" value="${state.filterTime || ''}" autocomplete="off">
-            </div>
+          <div class="form-group gn-time-group">
+            <label class="form-label" for="gn-time"><span class="gn-time-label-suggest">Max time (min)</span><span class="gn-time-label-plan" style="display:none">Total time (min)</span></label>
+            <input type="number" id="gn-time" class="form-input" min="1" placeholder="Any" value="${state.filterTime || ''}" autocomplete="off">
           </div>
-          <div class="gn-plan-options" style="display:none;margin-bottom:12px">
-            <label class="form-label" style="margin-bottom:6px">Options</label>
-            <label class="gn-player-chip"><input type="checkbox" id="gn-teach-mode"> Teach a new game (favor unplayed, low-complexity)</label>
-          </div>
-          ${playerOptions ? `<div class="gn-player-select" style="margin-bottom:12px"><div class="form-label" style="margin-bottom:6px">Or pick players</div><div class="gn-player-chips">${playerOptions}</div></div>` : ''}
-          <button class="btn btn-primary" id="gn-suggest-btn" style="width:100%"><span class="gn-btn-label-suggest">Suggest Games</span><span class="gn-btn-label-plan" style="display:none">Plan Evening</span></button>
-          <div id="gn-results"></div>
+        </div>
+        <div class="gn-plan-options" style="display:none;margin-bottom:12px">
+          <label class="form-label" style="margin-bottom:6px">Options</label>
+          <label class="gn-player-chip"><input type="checkbox" id="gn-teach-mode"> Teach a new game (favor unplayed, low-complexity)</label>
+        </div>
+        ${playerOptions ? `<div class="gn-player-select" style="margin-bottom:12px"><div class="form-label" style="margin-bottom:6px">Or pick players</div><div class="gn-player-chips">${playerOptions}</div></div>` : ''}
+        <button class="btn btn-primary" id="gn-suggest-btn" style="width:100%"><span class="gn-btn-label-suggest">Suggest Games</span><span class="gn-btn-label-plan" style="display:none">Plan Evening</span></button>
+        <div id="gn-results"></div>
+        <div class="modal-close-bar">
+          <button class="modal-close-sticky-btn" id="game-night-close-sticky" aria-label="Close">
+            Close
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="16" height="16"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
         </div>
       </div>`;
 
@@ -4479,12 +4506,14 @@ if ('serviceWorker' in navigator) {
       if (trapHandler) { modal.removeEventListener('keydown', trapHandler); trapHandler = null; }
       document.removeEventListener('keydown', _gnEscape);
       if (prevFocus) prevFocus.focus();
-      setTimeout(() => { modal.style.display = 'none'; popModalOpen(); }, 200);
+      setTimeout(() => { modal.style.display = 'none'; inner.innerHTML = ''; popModalOpen(); }, 200);
       backdrop.removeEventListener('click', close);
     }
 
     backdrop.addEventListener('click', close);
     inner.querySelector('#game-night-close').addEventListener('click', (e) => { e.stopPropagation(); close(); });
+    const stickyClose = inner.querySelector('#game-night-close-sticky');
+    if (stickyClose) stickyClose.addEventListener('click', (e) => { e.stopPropagation(); close(); });
 
     inner.querySelector('#gn-suggest-btn').addEventListener('click', async () => {
       const playerCount = parseInt(inner.querySelector('#gn-players').value, 10) || null;
@@ -4994,11 +5023,21 @@ if ('serviceWorker' in navigator) {
       });
     });
     const colsBtn = statsView.querySelector('#stats-export-cols-btn');
+    colsBtn.setAttribute('aria-haspopup', 'true');
+    colsBtn.setAttribute('aria-expanded', 'false');
+    const _closeColsDropdown = () => {
+      colsDropdown.hidden = true;
+      colsBtn.classList.remove('open');
+      colsBtn.setAttribute('aria-expanded', 'false');
+    };
     colsBtn.addEventListener('click', e => {
       e.stopPropagation();
       colsDropdown.hidden = !colsDropdown.hidden;
       colsBtn.classList.toggle('open', !colsDropdown.hidden);
+      colsBtn.setAttribute('aria-expanded', !colsDropdown.hidden ? 'true' : 'false');
     });
+    const _colsEsc = (e) => { if (e.key === 'Escape' && !colsDropdown.hidden) _closeColsDropdown(); };
+    document.addEventListener('keydown', _colsEsc);
     document.removeEventListener('click', _closeExportDropdown);
     document.addEventListener('click', _closeExportDropdown);
     statsView.querySelector('#stats-export-json').addEventListener('click', () => exportCollectionJSON(exportCols));
@@ -5106,7 +5145,7 @@ if ('serviceWorker' in navigator) {
             overlay.remove();
             popModalOpen();
             if (prevFocus && prevFocus.focus) prevFocus.focus();
-          }, 180);
+          }, 200);
           restoreInput.value = '';
         };
 
@@ -5713,7 +5752,7 @@ if ('serviceWorker' in navigator) {
           </svg>
         </div>
         <div class="share-modal-hero-text">
-          <h2>Share Collection</h2>
+          <h2 id="modal-title">Share Collection</h2>
           <p>Share your collection via live link or download a PDF.</p>
         </div>
         <button class="modal-close" id="share-modal-close" aria-label="Close">
@@ -5898,7 +5937,6 @@ if ('serviceWorker' in navigator) {
     const seconds = Math.round(duration / 1000);
     toast.innerHTML = `<span class="toast-msg">${escapeHtml(message)}</span><button class="toast-undo-btn">Undo (${seconds}s)</button>`;
     container.appendChild(toast);
-    requestAnimationFrame(() => toast.classList.add('show'));
 
     let remaining = seconds;
     const undoBtn = toast.querySelector('.toast-undo-btn');
@@ -5912,8 +5950,7 @@ if ('serviceWorker' in navigator) {
     function dismiss() {
       clearTimeout(timer);
       clearInterval(countdown);
-      toast.classList.remove('show');
-      setTimeout(() => toast.remove(), 300);
+      _hideToast(toast);
     }
 
     undoBtn.addEventListener('click', () => {

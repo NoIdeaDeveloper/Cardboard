@@ -103,10 +103,11 @@ export function startTour() {
     spotlight.style.width  = `${rect.width + PAD * 2}px`;
     spotlight.style.height = `${rect.height + PAD * 2}px`;
 
-    // Place tooltip below target, clamped to viewport
+    // Place tooltip below target, clamped to viewport. If it would overflow
+    // the bottom of the viewport, flip it above the target instead.
     const tipWidth = window.innerWidth < 400 ? window.innerWidth - 24 : 320;
     const tipLeft = Math.min(Math.max(rect.left, 12), window.innerWidth - tipWidth - 12);
-    const tipTop  = rect.bottom + PAD + 8;
+    const belowTop = rect.bottom + PAD + 8;
 
     tooltip.innerHTML = `
       <p id="tour-tooltip-text" aria-live="polite">${escapeHtml(text)}</p>
@@ -116,9 +117,21 @@ export function startTour() {
         <button class="tour-btn tour-btn-next" id="tour-next">${isLast ? 'Done' : 'Got it \u2192'}</button>
       </div>`;
     tooltip.style.left = `${tipLeft}px`;
-    tooltip.style.top  = `${tipTop}px`;
+    tooltip.style.top  = `${belowTop}px`;
     tooltip.style.display = 'block';
     tooltip.classList.add('open');
+
+    // Measure rendered height; flip above if it overflows the viewport bottom.
+    const tipHeight = tooltip.offsetHeight;
+    if (belowTop + tipHeight + 12 > window.innerHeight) {
+      const aboveTop = rect.top - PAD - 8 - tipHeight;
+      if (aboveTop >= 12) {
+        tooltip.style.top = `${aboveTop}px`;
+      } else {
+        // Neither direction fits cleanly; clamp to the viewport with a little margin.
+        tooltip.style.top = `${Math.max(12, window.innerHeight - tipHeight - 12)}px`;
+      }
+    }
 
     const nextBtn = tooltip.querySelector('#tour-next');
     nextBtn.addEventListener('click', nextStep);
@@ -135,6 +148,23 @@ export function startTour() {
     if (e.key === 'Escape') {
       e.stopPropagation();
       endTour();
+      return;
+    }
+    if (e.key === 'Tab') {
+      const focusable = tooltip.querySelectorAll('button');
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      } else if (!tooltip.contains(document.activeElement)) {
+        e.preventDefault();
+        first.focus();
+      }
     }
   }
 

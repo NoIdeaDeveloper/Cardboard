@@ -83,7 +83,7 @@
             </button>
             <div class="search-autocomplete" id="search-autocomplete" style="display:none"></div>
           </div>
-          <button class="icon-btn filter-toggle-btn" id="filter-toggle-btn" data-tooltip="Show filters" aria-label="Toggle filters" aria-pressed="false">
+          <button class="icon-btn filter-toggle-btn" id="filter-toggle-btn" data-tooltip="Show filters" aria-label="Toggle filters" aria-pressed="false" aria-haspopup="true" aria-expanded="false">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
             <span class="filter-badge" id="filter-badge" style="display:none"></span>
           </button>
@@ -601,14 +601,14 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
       <span>Stats</span>
     </button>
-    <button class="bottom-nav-btn" id="bottom-nav-more" aria-label="More">
+    <button class="bottom-nav-btn" id="bottom-nav-more" aria-label="More" aria-haspopup="true" aria-expanded="false">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
       <span>More</span>
     </button>
   </nav>
 
   <!-- Mobile "More" menu -->
-  <div class="mobile-more-menu" id="mobile-more-menu">
+  <div class="mobile-more-menu" id="mobile-more-menu" role="menu" aria-label="More options">
     <button class="mobile-more-item" data-view="players">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
       <span>Players</span>

@@ -19,17 +19,21 @@
     }
 
     function showToast(msg, type = 'info') {
-      // NOTE: duplicates ui-helpers.showToast but with a `show` class transition
-      // (share.html doesn't load ui-helpers.js). Keep in sync if you change the
-      // toast styling contract. Canonical version: ui-helpers.js:69.
+      // NOTE: duplicates ui-helpers.showToast (share.html doesn't load
+      // ui-helpers.js). Keep in sync if you change the toast styling contract.
+      // Canonical version: ui-helpers.js:69.
       const container = document.getElementById('toast-container');
       if (!container) return;
       const toast = document.createElement('div');
       toast.className = `toast toast-${type}`;
       toast.textContent = msg;
+      if (type === 'error') {
+        toast.setAttribute('role', 'alert');
+        toast.setAttribute('aria-live', 'assertive');
+      }
       container.appendChild(toast);
-      requestAnimationFrame(() => toast.classList.add('show'));
-      setTimeout(() => { toast.classList.remove('show'); setTimeout(() => toast.remove(), 300); }, 3500);
+      const dur = type === 'error' ? 5000 : 3500;
+      setTimeout(() => { toast.classList.add('hide'); setTimeout(() => toast.remove(), 400); }, dur);
     }
     function safeImgUrl(url) {
       // NOTE: returns url|null; ui-helpers.isSafeUrl returns boolean. Same allowlist.

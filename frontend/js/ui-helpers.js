@@ -138,7 +138,7 @@ function showConfirm(title, message, opts = {}) {
         if (typeof popModalOpen === 'function') popModalOpen();
         if (prevFocus && prevFocus.focus) try { prevFocus.focus(); } catch (_) {}
         resolve(result);
-      }, 160);
+      }, 200);
     }
     function onKey(e) { if (e.key === 'Escape') { e.stopPropagation(); close(false); } }
     function onBackdrop(e) { if (e.target === overlay) close(false); }
