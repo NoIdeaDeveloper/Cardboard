@@ -75,7 +75,7 @@ export function wireGoalsSection(container, { reloadStats }) {
     btn.addEventListener('click', async (e) => {
       e.stopPropagation();
       const goalId = parseInt(btn.dataset.goalId, 10);
-      const ok = await showConfirm('Delete Goal', 'Remove this goal?');
+      const ok = await showConfirm('Delete Goal', 'Remove this goal?', { confirmLabel: 'Delete' });
       if (!ok) return;
       try {
         await withLoading(btn, async () => {

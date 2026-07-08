@@ -2007,23 +2007,23 @@ function buildModalContent(opts) {
   return el;
 }
 
-// ===== Month Drill-Down List =====
+// ===== Drill-Down List (shared by month/rating/heatmap/DOW + player sessions) =====
 
 function buildMonthGameList(title, games, onGameClick, onClose) {
   const el = document.createElement('div');
-  el.className = 'month-drilldown';
+  el.className = 'drilldown';
   el.innerHTML = `
-    <div class="month-drilldown-header">
-      <h2 class="month-drilldown-title">${escapeHtml(title)}</h2>
-      <button class="month-drilldown-close" aria-label="Close">
+    <div class="drilldown-header">
+      <h2 class="drilldown-title" id="modal-title">${escapeHtml(title)}</h2>
+      <button class="drilldown-close" aria-label="Close">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
           <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
         </svg>
       </button>
     </div>
-    <div class="month-drilldown-list"></div>`;
-  el.querySelector('.month-drilldown-close').addEventListener('click', onClose);
-  const list = el.querySelector('.month-drilldown-list');
+    <div class="drilldown-list"></div>`;
+  el.querySelector('.drilldown-close').addEventListener('click', onClose);
+  const list = el.querySelector('.drilldown-list');
   if (!games.length) {
     list.innerHTML = `<div class="secondary-empty">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
@@ -2032,10 +2032,13 @@ function buildMonthGameList(title, games, onGameClick, onClose) {
   } else {
     for (const game of games) {
       const item = buildGameListItem(game);
-      item.addEventListener('click', e => {
+      item.setAttribute('tabindex', '0');
+      const activate = (e) => {
         if (e.target.closest('.quick-log-btn, .quick-owned-btn')) return;
         onGameClick(game);
-      });
+      };
+      item.addEventListener('click', activate);
+      item.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); activate(e); } });
       list.appendChild(item);
     }
   }
@@ -2044,19 +2047,19 @@ function buildMonthGameList(title, games, onGameClick, onClose) {
 
 function buildPlayerSessionList(playerName, sessions, onGameClick, onClose) {
   const el = document.createElement('div');
-  el.className = 'month-drilldown';
+  el.className = 'drilldown';
   el.innerHTML = `
-    <div class="month-drilldown-header">
-      <h2 class="month-drilldown-title">${escapeHtml(playerName)} · ${pluralize(sessions.length, 'session')}</h2>
-      <button class="month-drilldown-close" aria-label="Close">
+    <div class="drilldown-header">
+      <h2 class="drilldown-title" id="modal-title">${escapeHtml(playerName)} · ${pluralize(sessions.length, 'session')}</h2>
+      <button class="drilldown-close" aria-label="Close">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
           <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
         </svg>
       </button>
     </div>
-    <div class="month-drilldown-list"></div>`;
-  el.querySelector('.month-drilldown-close').addEventListener('click', onClose);
-  const list = el.querySelector('.month-drilldown-list');
+    <div class="drilldown-list"></div>`;
+  el.querySelector('.drilldown-close').addEventListener('click', onClose);
+  const list = el.querySelector('.drilldown-list');
   if (!sessions.length) {
     list.innerHTML = `<div class="secondary-empty">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
@@ -2067,6 +2070,9 @@ function buildPlayerSessionList(playerName, sessions, onGameClick, onClose) {
       const item = document.createElement('div');
       item.className = 'player-session-row';
       item.dataset.gameId = s.game_id;
+      item.setAttribute('tabindex', '0');
+      item.setAttribute('role', 'button');
+      item.setAttribute('aria-label', `${s.game_name || 'Unknown Game'}, ${formatDate(s.played_at)}`);
       const scores = s.player_scores || {};
       const playersHtml = s.players && s.players.length
         ? s.players.map(p => scores[p] != null
@@ -2092,7 +2098,9 @@ function buildPlayerSessionList(playerName, sessions, onGameClick, onClose) {
           </div>
           ${s.notes ? `<div class="session-notes">${escapeHtml(s.notes)}</div>` : ''}
         </div>`;
-      item.addEventListener('click', () => onGameClick(s.game_id));
+      const open = () => onGameClick(s.game_id);
+      item.addEventListener('click', open);
+      item.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } });
       list.appendChild(item);
     }
   }
@@ -2189,9 +2197,13 @@ function openGalleryLightbox(images, startIndex = 0) {
   if (!images.length) return;
   let current = startIndex;
   const multi = images.length > 1;
+  const prevFocus = document.activeElement;
 
   const overlay = document.createElement('div');
   overlay.className = 'gallery-lightbox-overlay';
+  overlay.setAttribute('role', 'dialog');
+  overlay.setAttribute('aria-modal', 'true');
+  overlay.setAttribute('aria-label', multi ? `Gallery, ${images.length} images` : 'Image viewer');
   overlay.innerHTML = `
     <div class="gallery-lightbox-panel">
       <button class="gallery-lightbox-close" aria-label="Close">
@@ -2201,6 +2213,7 @@ function openGalleryLightbox(images, startIndex = 0) {
       </button>
       ${multi ? '<button class="gallery-lightbox-nav gallery-lightbox-prev" aria-label="Previous">&#8249;</button>' : ''}
       <div class="gallery-lightbox-img-wrap">
+        <div class="gallery-lightbox-spinner" aria-hidden="true"></div>
         <img class="gallery-lightbox-img" src="" alt="Gallery image">
       </div>
       ${multi ? '<button class="gallery-lightbox-nav gallery-lightbox-next" aria-label="Next">&#8250;</button>' : ''}
@@ -2209,23 +2222,35 @@ function openGalleryLightbox(images, startIndex = 0) {
     </div>`;
 
   const img        = overlay.querySelector('.gallery-lightbox-img');
+  const spinner    = overlay.querySelector('.gallery-lightbox-spinner');
   const counter    = overlay.querySelector('.gallery-lightbox-counter');
   const captionEl  = overlay.querySelector('.gallery-lightbox-caption');
+  const closeBtn   = overlay.querySelector('.gallery-lightbox-close');
 
   function show(idx) {
     current = ((idx % images.length) + images.length) % images.length;
     const im = images[current];
+    img.style.opacity = '0';
+    if (spinner) spinner.style.display = 'block';
     img.src = im._src || `/api/games/${im.game_id}/images/${im.id}/file`;
     img.alt = im.caption || `Photo ${current + 1} of ${images.length}`;
     if (counter) counter.textContent = `${current + 1} / ${images.length}`;
     if (captionEl) captionEl.textContent = im.caption || '';
   }
 
+  img.addEventListener('load', () => {
+    img.style.opacity = '1';
+    if (spinner) spinner.style.display = 'none';
+  });
+  img.addEventListener('error', () => {
+    if (spinner) spinner.style.display = 'none';
+  });
+
   if (multi) {
     overlay.querySelector('.gallery-lightbox-prev').addEventListener('click', () => show(current - 1));
     overlay.querySelector('.gallery-lightbox-next').addEventListener('click', () => show(current + 1));
   }
-  overlay.querySelector('.gallery-lightbox-close').addEventListener('click', close);
+  closeBtn.addEventListener('click', close);
   overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
 
   let touchStartX = 0;
@@ -2240,22 +2265,35 @@ function openGalleryLightbox(images, startIndex = 0) {
     if (e.key === 'ArrowLeft'  && multi) show(current - 1);
     else if (e.key === 'ArrowRight' && multi) show(current + 1);
     else if (e.key === 'Escape') close();
+    else if (e.key === 'Tab') {
+      const focusable = [...overlay.querySelectorAll(FOCUSABLE)];
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last  = focusable[focusable.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    }
   }
   document.addEventListener('keydown', onKey, true);
 
-  const prevOverflow = document.body.style.overflow;
   let closed = false;
   function close() {
     if (closed) return;
     closed = true;
-    document.removeEventListener('keydown', onKey);
+    document.removeEventListener('keydown', onKey, true);
     popModalOpen();
-    overlay.remove();
+    overlay.classList.remove('open');
+    setTimeout(() => {
+      overlay.remove();
+      if (prevFocus && prevFocus.focus) prevFocus.focus();
+    }, 180);
   }
 
   show(startIndex);
   pushModalOpen();
   document.body.appendChild(overlay);
+  requestAnimationFrame(() => overlay.classList.add('open'));
+  requestAnimationFrame(() => closeBtn.focus());
 }
 
 function openSingleImageLightbox(url, alt = '') {
@@ -2495,7 +2533,7 @@ function buildCollectionSettingsModal(prefs, onPrefsChange) {
       if (!entry) return '';
       const [prefKey, label] = entry;
       return `<div class="settings-modal-row" draggable="true" data-key="${sectionKey}">
-        <span class="drag-handle" aria-hidden="true">${gripSvg}</span>
+        <span class="drag-handle" tabindex="0" role="button" aria-label="Reorder ${escapeHtml(label)} (use arrow keys to move)" aria-grabbed="false">${gripSvg}</span>
         <label class="settings-modal-toggle">
           <input type="checkbox" data-pref="${prefKey}"${currentPrefs[prefKey] !== false ? ' checked' : ''}>
           ${escapeHtml(label)}
@@ -2516,7 +2554,7 @@ function buildCollectionSettingsModal(prefs, onPrefsChange) {
   el.className = 'modal-content-panel';
   el.innerHTML = `
     <div class="modal-panel-header">
-      <h2 id="collection-settings-title">Customize Collection Page</h2>
+      <h2 id="modal-title">Customize Collection Page</h2>
       <button class="modal-close" id="collection-settings-close" aria-label="Close settings">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </button>
@@ -2531,12 +2569,20 @@ function buildCollectionSettingsModal(prefs, onPrefsChange) {
       <div class="settings-modal-list settings-modal-list-toolbar">
         ${toolbarTogglesHtml}
       </div>
+      <div class="settings-modal-footer">
+        <span class="settings-modal-live" aria-live="polite" role="status"></span>
+        <button class="btn btn-primary" id="collection-settings-done">Done</button>
+      </div>
     </div>`;
 
   const settingsList = el.querySelector('#collection-settings-list');
+  const liveRegion = el.querySelector('.settings-modal-live');
 
-  // Wire close button
+  // Wire close button + Done button
   el.querySelector('#collection-settings-close').addEventListener('click', () => {
+    closeModal();
+  });
+  el.querySelector('#collection-settings-done').addEventListener('click', () => {
     closeModal();
   });
 
@@ -2548,6 +2594,29 @@ function buildCollectionSettingsModal(prefs, onPrefsChange) {
       if (onPrefsChange) onPrefsChange(currentPrefs);
     });
   });
+
+  // Apply reorder: move srcRow to position of dstRow, update prefs, announce
+  function applyReorder(srcRow, dstRow) {
+    if (!srcRow || srcRow === dstRow) return;
+    const rows = [...settingsList.children];
+    const srcIdx = rows.indexOf(srcRow);
+    const dstIdx = rows.indexOf(dstRow);
+    settingsList.insertBefore(srcRow, srcIdx < dstIdx ? dstRow.nextSibling : dstRow);
+
+    const newToggleKeys = [...settingsList.querySelectorAll('[data-key]')].map(r => r.dataset.key);
+    const toggleIter = newToggleKeys[Symbol.iterator]();
+    const newOrder = currentPrefs.section_order.map(k =>
+      newToggleKeys.includes(k) ? toggleIter.next().value : k
+    );
+
+    currentPrefs = { ...currentPrefs, section_order: newOrder };
+    if (onPrefsChange) onPrefsChange(currentPrefs);
+
+    const newPos = [...settingsList.children].indexOf(srcRow) + 1;
+    const total = settingsList.children.length;
+    const label = srcRow.querySelector('.settings-modal-toggle').textContent.trim();
+    if (liveRegion) liveRegion.textContent = `${label} moved to position ${newPos} of ${total}`;
+  }
 
   // Drag-and-drop reordering (only on section toggles)
   let dragSrcKey = null;
@@ -2568,30 +2637,49 @@ function buildCollectionSettingsModal(prefs, onPrefsChange) {
       if (row.dataset.key !== dragSrcKey) row.classList.add('drag-over');
     });
     row.addEventListener('dragleave', e => {
-      // Only remove highlight if actually leaving the row (not entering a child)
       if (!row.contains(e.relatedTarget)) row.classList.remove('drag-over');
     });
     row.addEventListener('drop', e => {
       e.preventDefault();
       row.classList.remove('drag-over');
       if (!dragSrcKey || dragSrcKey === row.dataset.key) return;
-
       const srcRow = settingsList.querySelector(`[data-key="${dragSrcKey}"]`);
-      const rows = [...settingsList.children];
-      const srcIdx = rows.indexOf(srcRow);
-      const dstIdx = rows.indexOf(row);
-      settingsList.insertBefore(srcRow, srcIdx < dstIdx ? row.nextSibling : row);
+      applyReorder(srcRow, row);
+    });
+  });
 
-      // Build new order: interleave reordered toggle keys at their new positions,
-      // keeping non-toggle keys (toolbar, filters, games) at their original relative positions
-      const newToggleKeys = [...settingsList.querySelectorAll('[data-key]')].map(r => r.dataset.key);
-      const toggleIter = newToggleKeys[Symbol.iterator]();
-      const newOrder = currentPrefs.section_order.map(k =>
-        newToggleKeys.includes(k) ? toggleIter.next().value : k
-      );
-
-      currentPrefs = { ...currentPrefs, section_order: newOrder };
-      if (onPrefsChange) onPrefsChange(currentPrefs);
+  // Keyboard reordering on drag handles (ArrowUp/ArrowDown)
+  settingsList.querySelectorAll('.drag-handle').forEach(handle => {
+    handle.addEventListener('keydown', e => {
+      const row = handle.closest('.settings-modal-row');
+      if (!row) return;
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        const prev = row.previousElementSibling;
+        if (prev) {
+          handle.setAttribute('aria-grabbed', 'true');
+          applyReorder(row, prev);
+          handle.setAttribute('aria-grabbed', 'false');
+          handle.focus();
+        }
+      } else if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        const next = row.nextElementSibling;
+        if (next) {
+          handle.setAttribute('aria-grabbed', 'true');
+          applyReorder(next, row);
+          handle.setAttribute('aria-grabbed', 'false');
+          handle.focus();
+        }
+      } else if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        const rows = [...settingsList.children];
+        const idx = rows.indexOf(row);
+        const newPos = idx + 1;
+        const total = rows.length;
+        const label = row.querySelector('.settings-modal-toggle').textContent.trim();
+        if (liveRegion) liveRegion.textContent = `${label} is at position ${newPos} of ${total}. Use up and down arrows to move.`;
+      }
     });
   });
 

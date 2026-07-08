@@ -1117,73 +1117,94 @@ if ('serviceWorker' in navigator) {
     inner.innerHTML = `
       <div class="modal-content-panel">
         <div class="modal-panel-header">
-          <h2>Log Session for ${ids.length} Games</h2>
+          <h2 id="modal-title">Log Session for ${ids.length} Games</h2>
           <button class="modal-close" id="bulk-session-close" aria-label="Close">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="18" height="18"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
           </button>
         </div>
-        <div class="modal-body">
+        <div class="modal-body bs-body">
           <div class="form-grid">
             <div class="form-group">
               <label class="form-label" for="bs-date">Date</label>
               <input type="date" id="bs-date" class="form-input" value="${new Date().toLocaleDateString('en-CA')}">
+              <span class="field-error" id="bs-date-error"></span>
             </div>
             <div class="form-group">
               <label class="form-label" for="bs-duration">Duration (min)</label>
               <input type="number" id="bs-duration" class="form-input" min="1" placeholder="Optional">
             </div>
           </div>
-          <div class="form-group" style="margin-top:12px">
+          <div class="form-group">
             <label class="form-label" for="bs-notes">Notes</label>
             <textarea id="bs-notes" class="form-textarea" rows="2" placeholder="Optional"></textarea>
           </div>
-          <div class="form-group" style="margin-top:12px">
-            <label class="inline-toggle" style="cursor:pointer">
+          <div class="form-group">
+            <label class="inline-toggle bs-coop-toggle">
               <input type="checkbox" id="bs-coop"> Cooperative game
             </label>
           </div>
-          <div id="bs-coop-fields" style="display:none">
-            <div class="form-group" style="margin-top:8px">
+          <div id="bs-coop-fields" class="ql-hidden bs-coop-fields">
+            <div class="form-group">
               <label class="form-label">Outcome</label>
               <div class="ql-coop-outcome">
-                ${[['win','🏆 Win'],['loss','❌ Loss'],['draw','🤝 Draw'],['incomplete','⏹ Incomplete']].map(([v,l]) => `<label class="inline-toggle" style="cursor:pointer; margin-right:1rem"><input type="radio" name="bs-outcome" value="${v}"> ${l}</label>`).join('')}
+                ${[['win','🏆 Win'],['loss','❌ Loss'],['draw','🤝 Draw'],['incomplete','⏹ Incomplete']].map(([v,l]) => `<label class="inline-toggle"><input type="radio" name="bs-outcome" value="${v}"> ${l}</label>`).join('')}
               </div>
             </div>
-            <div class="form-group" style="margin-top:8px">
+            <div class="form-group">
               <label class="form-label" for="bs-scenario">Scenario / Difficulty</label>
               <input type="text" id="bs-scenario" class="form-input" placeholder="optional" autocomplete="off">
             </div>
           </div>
-          <button class="btn btn-primary" id="bs-submit" style="margin-top:16px;width:100%">Log Session</button>
+          <button class="btn btn-primary bs-submit" id="bs-submit">Log Session</button>
         </div>
       </div>`;
     openModal(inner);
     inner.querySelector('#bulk-session-close').addEventListener('click', closeModal);
     const bsCoop = inner.querySelector('#bs-coop');
     const bsCoopFields = inner.querySelector('#bs-coop-fields');
-    bsCoop.addEventListener('change', () => { bsCoopFields.style.display = bsCoop.checked ? '' : 'none'; });
-    inner.querySelector('#bs-submit').addEventListener('click', async () => {
+    bsCoop.addEventListener('change', () => {
+      const isCoop = bsCoop.checked;
+      bsCoopFields.classList.toggle('ql-hidden', !isCoop);
+      if (!isCoop) {
+        inner.querySelectorAll('input[name="bs-outcome"]').forEach(r => { r.checked = false; });
+        inner.querySelector('#bs-scenario').value = '';
+      }
+    });
+    const submitBtn = inner.querySelector('#bs-submit');
+    submitBtn.addEventListener('click', async () => {
+      const dateInput = document.getElementById('bs-date');
+      const dateErr = document.getElementById('bs-date-error');
+      if (!dateInput.value) {
+        if (dateErr) dateErr.classList.add('active');
+        dateInput.classList.add('invalid');
+        dateInput.focus();
+        return;
+      }
+      if (dateErr) dateErr.classList.remove('active');
+      dateInput.classList.remove('invalid');
       const isCoop = bsCoop.checked;
       const outcomeEl = inner.querySelector('input[name="bs-outcome"]:checked');
       const body = {
         game_ids: ids,
-        played_at: document.getElementById('bs-date').value,
+        played_at: dateInput.value,
         duration_minutes: parseInt(document.getElementById('bs-duration').value, 10) || undefined,
         notes: document.getElementById('bs-notes').value.trim() || undefined,
         cooperative: isCoop || undefined,
         outcome: isCoop ? (outcomeEl ? outcomeEl.value : undefined) : undefined,
         scenario: isCoop ? (document.getElementById('bs-scenario').value.trim() || undefined) : undefined,
       };
-      try {
-        await API.bulkSession(body);
-        showToast(`Session logged for ${pluralize(ids.length, 'game')}`, 'success');
-        state.selectedGameIds.clear();
-        closeModal();
-        loadCollection();
-        renderBulkToolbar();
-      } catch (err) {
-        showToast(classifyError(err), 'error');
-      }
+      await withLoading(submitBtn, async () => {
+        try {
+          await API.bulkSession(body);
+          showToast(`Session logged for ${pluralize(ids.length, 'game')}`, 'success');
+          state.selectedGameIds.clear();
+          closeModal();
+          loadCollection();
+          renderBulkToolbar();
+        } catch (err) {
+          showToast(classifyError(err), 'error');
+        }
+      }, 'Logging…');
     });
   }
 
@@ -1208,7 +1229,7 @@ if ('serviceWorker' in navigator) {
 
   async function handleBulkDelete() {
     const n = state.selectedGameIds.size;
-    const confirmed = await showConfirm(`Delete ${pluralize(n, 'Selected Game')}`, `Delete ${pluralize(n, 'selected game')}?`);
+    const confirmed = await showConfirm(`Delete ${pluralize(n, 'Selected Game')}`, `Delete ${pluralize(n, 'selected game')}?`, { confirmLabel: 'Delete' });
     if (!confirmed) return;
     const ids = [...state.selectedGameIds];
     const deletedGameSnapshots = ids.map(id => state.games.find(g => g.id === id)).filter(Boolean);
@@ -2086,25 +2107,29 @@ if ('serviceWorker' in navigator) {
     if (existing) { existing.remove(); return; }
 
     const todayStr = today || new Date().toLocaleDateString('en-CA');
+    const prevFocus = document.activeElement;
     const popover = document.createElement('div');
     popover.className = 'ql-compact-popover';
+    popover.setAttribute('role', 'dialog');
+    popover.setAttribute('aria-modal', 'true');
+    popover.setAttribute('aria-label', `Quick log: ${game.name}`);
     popover.innerHTML = `
       <div class="ql-compact-header">
         <span class="ql-compact-game">${escapeHtml(game.name)}</span>
       </div>
       <div class="ql-compact-fields">
         <div class="ql-compact-row">
-          <label class="ql-compact-label">Date</label>
+          <label class="ql-compact-label" for="qlc-date">Date</label>
           <input type="date" class="ql-compact-input" id="qlc-date" value="${todayStr}" autocomplete="off">
         </div>
         <div class="ql-compact-row">
-          <label class="ql-compact-label">Rating</label>
-          <div class="star-picker ql-compact-stars" id="qlc-rating" data-value="0">
-            ${[1,2,3,4,5].map(n => `<button type="button" class="star-btn star-btn-sm" data-val="${n}" title="${n} star${n>1?'s':''}"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2"><polygon points="8 1.5 10 5.5 14.5 6.1 11.2 9.2 12 13.7 8 11.6 4 13.7 4.8 9.2 1.5 6.1 6 5.5"/></svg></button>`).join('')}
+          <span class="ql-compact-label" id="qlc-rating-label">Rating</span>
+          <div class="star-picker ql-compact-stars" id="qlc-rating" data-value="0" role="group" aria-labelledby="qlc-rating-label">
+            ${[1,2,3,4,5].map(n => `<button type="button" class="star-btn star-btn-sm" data-val="${n}" title="${n} star${n>1?'s':''}" aria-label="${n} star${n>1?'s':''}"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2"><polygon points="8 1.5 10 5.5 14.5 6.1 11.2 9.2 12 13.7 8 11.6 4 13.7 4.8 9.2 1.5 6.1 6 5.5"/></svg></button>`).join('')}
           </div>
         </div>
         <div class="ql-compact-row">
-          <label class="ql-compact-label">Duration</label>
+          <label class="ql-compact-label" for="qlc-duration">Duration</label>
           <input type="number" class="ql-compact-input" id="qlc-duration" min="1" placeholder="min" autocomplete="off">
         </div>
       </div>
@@ -2112,10 +2137,11 @@ if ('serviceWorker' in navigator) {
         <button class="btn btn-primary btn-sm" id="qlc-submit">Log it</button>
         <button class="btn btn-ghost btn-sm" id="qlc-more">More</button>
       </div>
-      <button class="ql-compact-close" id="qlc-close" aria-label="Close">&times;</button>
+      <button class="ql-compact-close" id="qlc-close" aria-label="Close"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3.5 3.5 L12.5 12.5 M12.5 3.5 L3.5 12.5"/></svg></button>
     `;
 
     document.body.appendChild(popover);
+    pushModalOpen();
 
     const ac = new AbortController();
     let closed = false;
@@ -2124,11 +2150,19 @@ if ('serviceWorker' in navigator) {
       closed = true;
       ac.abort();
       popover.classList.remove('open');
-      setTimeout(() => popover.remove(), 180);
+      setTimeout(() => { popover.remove(); popModalOpen(); if (prevFocus && prevFocus.focus) prevFocus.focus(); }, 180);
     }
 
     function onKeyDown(e) {
-      if (e.key === 'Escape') close();
+      if (e.key === 'Escape') { close(); return; }
+      if (e.key === 'Tab') {
+        const focusable = popover.querySelector('button:not([disabled]), [href], input:not([disabled]), [tabindex]:not([tabindex="-1"])');
+        const all = Array.from(popover.querySelectorAll('button:not([disabled]), [href], input:not([disabled]), [tabindex]:not([tabindex="-1"])'));
+        if (!all.length) return;
+        const first = all[0], last = all[all.length - 1];
+        if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+        else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+      }
     }
 
     function onOutsideClick(e) {
@@ -2146,15 +2180,21 @@ if ('serviceWorker' in navigator) {
       let top = anchorRect.top - gap;
       if (left < 8) left = 8;
       if (left + popoverW > window.innerWidth - 8) left = window.innerWidth - popoverW - 8;
-      if (top < 60) {
-        top = anchorRect.bottom + gap;
+      // Flip below if not enough room above (use anchor height, not magic number)
+      if (top < 8 || (anchorRect.top < popover.offsetHeight + gap && anchorRect.bottom + popover.offsetHeight + gap < window.innerHeight)) {
+        if (anchorRect.bottom + gap + 200 < window.innerHeight) {
+          top = anchorRect.bottom + gap;
+        }
       }
       popover.style.left = left + 'px';
       popover.style.top = top + 'px';
     } else {
       popover.classList.add('ql-compact-centered');
     }
-    requestAnimationFrame(() => popover.classList.add('open'));
+    requestAnimationFrame(() => {
+      popover.classList.add('open');
+      popover.querySelector('#qlc-date').focus();
+    });
 
     document.addEventListener('keydown', onKeyDown, { signal: ac.signal });
     popover.querySelector('#qlc-close').addEventListener('click', close, { signal: ac.signal });
@@ -2209,11 +2249,18 @@ if ('serviceWorker' in navigator) {
 
   function openQuickLogSessionFull(game, presetDate) {
     const today = presetDate || new Date().toLocaleDateString('en-CA');
+    const prevFocus = document.activeElement;
     const overlay = document.createElement('div');
     overlay.className = 'quick-log-overlay';
+    overlay.setAttribute('role', 'dialog');
+    overlay.setAttribute('aria-modal', 'true');
+    overlay.setAttribute('aria-label', `Log play: ${game.name}`);
     overlay.innerHTML = `
       <div class="quick-log-backdrop"></div>
       <div class="quick-log-popup">
+        <button class="quick-log-close" aria-label="Close" type="button">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6 L18 18 M18 6 L6 18"/></svg>
+        </button>
         <div class="quick-log-header">
           <span class="quick-log-label">Log Play</span>
           <span class="quick-log-game"></span>
@@ -2236,24 +2283,26 @@ if ('serviceWorker' in navigator) {
             <input type="text" id="ql-notes" class="form-input" placeholder="optional" autocomplete="off">
           </div>
           <div class="quick-log-field ql-full">
-            <label>Session Rating</label>
-            <div class="star-picker" id="ql-rating-picker" data-value="0">
-              ${[1,2,3,4,5].map(n => `<button type="button" class="star-btn" data-val="${n}" title="${n} star${n>1?'s':''}">★</button>`).join('')}
+            <span id="ql-rating-label" class="quick-log-field-label">Session Rating</span>
+            <div class="star-picker" id="ql-rating-picker" role="group" aria-labelledby="ql-rating-label" data-value="0">
+              ${[1,2,3,4,5].map(n => `<button type="button" class="star-btn" data-val="${n}" title="${n} star${n>1?'s':''}" aria-label="${n} star${n>1?'s':''}">★</button>`).join('')}
             </div>
           </div>
           <div class="quick-log-field ql-full">
-            <label class="inline-toggle" style="cursor:pointer">
-              <input type="checkbox" id="ql-solo"> Solo game
-            </label>
-            <label class="inline-toggle" style="cursor:pointer; margin-left:1rem">
-              <input type="checkbox" id="ql-coop"> Cooperative
-            </label>
+            <div class="quick-log-toggle-row">
+              <label class="inline-toggle">
+                <input type="checkbox" id="ql-solo"> Solo game
+              </label>
+              <label class="inline-toggle">
+                <input type="checkbox" id="ql-coop"> Cooperative
+              </label>
+            </div>
           </div>
-          <div id="ql-coop-fields" style="display:none">
+          <div id="ql-coop-fields" class="ql-hidden">
             <div class="quick-log-field ql-full">
-              <label>Outcome</label>
+              <span class="quick-log-field-label">Outcome</span>
               <div class="ql-coop-outcome">
-                ${[['win','🏆 Win'],['loss','❌ Loss'],['draw','🤝 Draw'],['incomplete','⏹ Incomplete']].map(([v,l]) => `<label class="inline-toggle" style="cursor:pointer; margin-right:1rem"><input type="radio" name="ql-outcome" value="${v}"> ${l}</label>`).join('')}
+                ${[['win','🏆 Win'],['loss','❌ Loss'],['draw','🤝 Draw'],['incomplete','⏹ Incomplete']].map(([v,l]) => `<label class="inline-toggle"><input type="radio" name="ql-outcome" value="${v}"> ${l}</label>`).join('')}
               </div>
             </div>
             <div class="quick-log-field ql-full">
@@ -2280,9 +2329,9 @@ if ('serviceWorker' in navigator) {
               </div>` : ''}
               <input type="text" id="ql-players-names" class="form-input" placeholder="${state.players.length ? 'Or type additional names…' : 'comma-separated names'}" autocomplete="off">
             </div>
-            <div id="ql-scores-section" style="display:none">
+            <div id="ql-scores-section" class="ql-hidden">
               <div class="quick-log-field ql-full">
-                <label>Scores (optional)</label>
+                <span class="quick-log-field-label">Scores (optional)</span>
                 <div id="ql-scores-list" class="ql-scores-list"></div>
               </div>
             </div>
@@ -2298,12 +2347,24 @@ if ('serviceWorker' in navigator) {
     overlay.querySelector('.quick-log-game').textContent = game.name;
     requestAnimationFrame(() => overlay.classList.add('open'));
     pushModalOpen();
-    overlay.querySelector('#ql-date').focus();
+    requestAnimationFrame(() => overlay.querySelector('#ql-date').focus());
+
+    const popup = overlay.querySelector('.quick-log-popup');
+    function trapFocus(e) {
+      if (e.key !== 'Tab') return;
+      const focusable = popup.querySelectorAll('button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])');
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    }
 
     function close() {
       document.removeEventListener('keydown', onKeyDown);
+      document.removeEventListener('keydown', trapFocus);
       overlay.classList.remove('open');
-      setTimeout(() => { overlay.remove(); popModalOpen(); }, 200);
+      setTimeout(() => { overlay.remove(); popModalOpen(); if (prevFocus) prevFocus.focus(); }, 200);
     }
 
     function onKeyDown(e) {
@@ -2312,7 +2373,9 @@ if ('serviceWorker' in navigator) {
 
     overlay.querySelector('.quick-log-backdrop').addEventListener('click', close);
     overlay.querySelector('#ql-cancel').addEventListener('click', close);
+    overlay.querySelector('.quick-log-close').addEventListener('click', close);
     document.addEventListener('keydown', onKeyDown);
+    document.addEventListener('keydown', trapFocus);
 
     // Star picker for quick log
     const qlRatingPicker = overlay.querySelector('#ql-rating-picker');
@@ -2345,9 +2408,9 @@ if ('serviceWorker' in navigator) {
     function applyMode() {
       const isSolo = soloCheckbox.checked;
       const isCoop = coopCheckbox.checked;
-      multiplayerFields.style.display = isSolo ? 'none' : '';
-      coopFields.style.display = isCoop ? '' : 'none';
-      if (winnerField) winnerField.style.display = isCoop ? 'none' : '';
+      multiplayerFields.classList.toggle('ql-hidden', isSolo);
+      coopFields.classList.toggle('ql-hidden', !isCoop);
+      if (winnerField) winnerField.classList.toggle('ql-hidden', isCoop);
     }
     soloCheckbox.addEventListener('change', () => {
       if (soloCheckbox.checked && coopCheckbox.checked) coopCheckbox.checked = false;
@@ -2370,8 +2433,8 @@ if ('serviceWorker' in navigator) {
         : [];
       const typedNames = (overlay.querySelector('#ql-players-names').value || '').split(',').map(s => s.trim()).filter(Boolean);
       const allNames = [...new Set([...activeChips, ...typedNames])];
-      if (!allNames.length) { scoresSection.style.display = 'none'; return; }
-      scoresSection.style.display = '';
+      if (!allNames.length) { scoresSection.classList.add('ql-hidden'); return; }
+      scoresSection.classList.remove('ql-hidden');
       // Preserve existing score values
       const existing = {};
       scoresList.querySelectorAll('.ql-score-row').forEach(row => {
@@ -2502,7 +2565,8 @@ if ('serviceWorker' in navigator) {
   async function handleDeleteGame(gameId, gameName) {
     const confirmed = await showConfirm(
       'Remove Game',
-      `Are you sure you want to remove "${gameName}" from your collection?`
+      `Are you sure you want to remove "${gameName}" from your collection?`,
+      { confirmLabel: 'Remove' }
     );
     if (!confirmed) return;
     try {
@@ -2681,7 +2745,7 @@ if ('serviceWorker' in navigator) {
   }
 
   async function handleDeleteSession(sessionId, gameId, onSuccess, sessionData = null) {
-    const confirmed = await showConfirm('Delete Session', 'Remove this session?');
+    const confirmed = await showConfirm('Delete Session', 'Remove this session?', { confirmLabel: 'Delete' });
     if (!confirmed) return;
     try {
       const capturedSession = sessionData || null;
@@ -2784,7 +2848,7 @@ if ('serviceWorker' in navigator) {
   }
 
   async function handleDeleteGalleryImage(gameId, imgId, newPrimaryUrl, onSuccess) {
-    const confirmed = await showConfirm('Delete Photo', 'Remove this photo? This cannot be undone.');
+    const confirmed = await showConfirm('Delete Photo', 'Remove this photo? This cannot be undone.', { confirmLabel: 'Delete' });
     if (!confirmed) return;
     try {
       await API.deleteGalleryImage(gameId, imgId);
@@ -3031,9 +3095,9 @@ if ('serviceWorker' in navigator) {
             <input type="search" id="players-search" class="form-input players-search-input" placeholder="Search players…" value="${escapeHtml(playerSearch)}" autocomplete="off">
             <div class="players-sort-bar">
               <span class="players-sort-label">Sort:</span>
-              <button class="players-sort-btn${playerSortKey==='name'?' active':''}" data-sort="name">Name</button>
-              <button class="players-sort-btn${playerSortKey==='sessions'?' active':''}" data-sort="sessions">Sessions</button>
-              <button class="players-sort-btn${playerSortKey==='wins'?' active':''}" data-sort="wins">Wins</button>
+              <button class="players-sort-btn${playerSortKey==='name'?' active':''}" data-sort="name" aria-pressed="${playerSortKey==='name'}">Name</button>
+              <button class="players-sort-btn${playerSortKey==='sessions'?' active':''}" data-sort="sessions" aria-pressed="${playerSortKey==='sessions'}">Sessions</button>
+              <button class="players-sort-btn${playerSortKey==='wins'?' active':''}" data-sort="wins" aria-pressed="${playerSortKey==='wins'}">Wins</button>
             </div>
           </div>` : ''}
           <div class="players-list" id="players-list"></div>
@@ -3086,7 +3150,11 @@ if ('serviceWorker' in navigator) {
         const btn = e.target.closest('.players-sort-btn');
         if (!btn) return;
         playerSortKey = btn.dataset.sort;
-        inner.querySelectorAll('.players-sort-btn').forEach(b => b.classList.toggle('active', b.dataset.sort === playerSortKey));
+        inner.querySelectorAll('.players-sort-btn').forEach(b => {
+          const active = b.dataset.sort === playerSortKey;
+          b.classList.toggle('active', active);
+          b.setAttribute('aria-pressed', String(active));
+        });
         renderList();
       });
 
@@ -3279,11 +3347,21 @@ if ('serviceWorker' in navigator) {
         img.src = `/avatars/${p.id}.svg`;
         img.className = 'avatar-preset-item' + (player.avatar_preset === p.id ? ' active' : '');
         img.title = p.label;
+        img.alt = p.label;
         img.loading = 'lazy';
-        img.addEventListener('click', () => _applyAvatarPreset(panel, player, p.id));
+        img.tabIndex = 0;
+        img.role = 'button';
+        img.setAttribute('aria-label', `Set avatar to ${p.label}`);
+        const apply = () => _applyAvatarPreset(panel, player, p.id);
+        img.addEventListener('click', apply);
+        img.addEventListener('keydown', e => {
+          if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); apply(); }
+        });
         picker.appendChild(img);
       });
       picker.style.cssText = `position:fixed;top:${rect.bottom + 8}px;left:${rect.left + rect.width / 2}px;transform:translateX(-50%);z-index:9999;`;
+      picker.setAttribute('role', 'listbox');
+      picker.setAttribute('aria-label', 'Choose avatar preset');
       document.body.appendChild(picker);
       panel._avatarPicker = picker;
 
@@ -3293,14 +3371,26 @@ if ('serviceWorker' in navigator) {
           document.removeEventListener('click', onOutside, true);
         }
       };
-      setTimeout(() => document.addEventListener('click', onOutside, true), 0);
+      const onEscape = e => {
+        if (e.key === 'Escape') { _closeAvatarPicker(panel); document.removeEventListener('keydown', onEscape, true); }
+      };
+      setTimeout(() => {
+        document.addEventListener('click', onOutside, true);
+        document.addEventListener('keydown', onEscape, true);
+        const first = picker.querySelector('.avatar-preset-item');
+        if (first) first.focus();
+      }, 0);
       picker._onOutside = onOutside;
+      picker._onEscape = onEscape;
     }
 
     function _closeAvatarPicker(panel) {
       if (panel._avatarPicker) {
         if (panel._avatarPicker._onOutside) {
           document.removeEventListener('click', panel._avatarPicker._onOutside, true);
+        }
+        if (panel._avatarPicker._onEscape) {
+          document.removeEventListener('keydown', panel._avatarPicker._onEscape, true);
         }
         panel._avatarPicker.remove();
         panel._avatarPicker = null;
@@ -3330,6 +3420,9 @@ if ('serviceWorker' in navigator) {
     function openPlayerProfile(player) {
       const panel = document.createElement('div');
       panel.className = 'player-profile-panel';
+      panel.setAttribute('role', 'dialog');
+      panel.setAttribute('aria-modal', 'true');
+      panel.setAttribute('aria-label', `${player.name} profile`);
       panel.innerHTML = `
         <div class="player-profile-header">
           <button class="player-profile-back btn btn-ghost btn-sm">
@@ -3344,13 +3437,33 @@ if ('serviceWorker' in navigator) {
         </div>`;
 
       inner.querySelector('.modal-content-panel').appendChild(panel);
-      requestAnimationFrame(() => panel.classList.add('open'));
+      requestAnimationFrame(() => {
+        panel.classList.add('open');
+        panel.querySelector('.player-profile-back')?.focus();
+      });
 
-      panel.querySelector('.player-profile-back').addEventListener('click', () => {
+      // Hide underlying list from AT and mark inert so the parent modal trap skips it
+      const panelSiblings = [...panel.parentElement.children].filter(el => el !== panel);
+      panelSiblings.forEach(el => { el.setAttribute('aria-hidden', 'true'); if ('inert' in el) el.inert = true; });
+
+      const profileTrap = (e) => {
+        if (e.key !== 'Tab') return;
+        const els = [...panel.querySelectorAll(FOCUSABLE)].filter(el => el.offsetParent !== null);
+        if (!els.length) return;
+        if (e.shiftKey && document.activeElement === els[0]) { e.preventDefault(); els[els.length - 1].focus(); }
+        else if (!e.shiftKey && document.activeElement === els[els.length - 1]) { e.preventDefault(); els[0].focus(); }
+      };
+      panel.addEventListener('keydown', profileTrap);
+
+      const closePanel = () => {
         _closeAvatarPicker(panel);
         panel.classList.remove('open');
+        panelSiblings.forEach(el => { el.removeAttribute('aria-hidden'); if ('inert' in el) el.inert = false; });
+        panel.removeEventListener('keydown', profileTrap);
         setTimeout(() => panel.remove(), 220);
-      });
+      };
+
+      panel.querySelector('.player-profile-back').addEventListener('click', closePanel);
 
       // Avatar upload via delegated events so they survive wrap re-renders
       panel.addEventListener('change', async e => {
@@ -3543,7 +3656,7 @@ if ('serviceWorker' in navigator) {
       el.className = 'modal-content-panel';
       el.innerHTML = `
         <div class="modal-panel-header">
-          <h2>Keyboard Shortcuts</h2>
+          <h2 id="modal-title">Keyboard Shortcuts</h2>
           <button class="modal-close" id="shortcuts-modal-close" aria-label="Close">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="18" height="18"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
           </button>
@@ -3888,7 +4001,7 @@ if ('serviceWorker' in navigator) {
             title = 'Similar Game Found';
             msg = `"${similar.name}" is very similar. Add it anyway?`;
           }
-          const proceed = await showConfirm(title, msg);
+          const proceed = await showConfirm(title, msg, { confirmLabel: 'Add Anyway', danger: false });
           if (!proceed) return;
           allowDuplicate = true;
         }
@@ -3899,7 +4012,8 @@ if ('serviceWorker' in navigator) {
         if (localDup) {
           const proceed = await showConfirm(
             'Possible Duplicate',
-            `"${localDup.name}" is already in your collection. Add it again anyway?`
+            `"${localDup.name}" is already in your collection. Add it again anyway?`,
+            { confirmLabel: 'Add Anyway', danger: false }
           );
           if (!proceed) return;
           allowDuplicate = true;
@@ -4297,9 +4411,9 @@ if ('serviceWorker' in navigator) {
           </button>
         </div>
         <div class="modal-body">
-          <div class="gn-mode-toggle" style="margin-bottom:12px">
-            <button class="btn btn-ghost btn-sm gn-mode-btn active" data-mode="suggest" type="button">Single Pick</button>
-            <button class="btn btn-ghost btn-sm gn-mode-btn" data-mode="plan" type="button">Plan Evening</button>
+          <div class="gn-mode-toggle" role="group" aria-label="Game night mode" style="margin-bottom:12px">
+            <button class="btn btn-ghost btn-sm gn-mode-btn active" data-mode="suggest" type="button" aria-pressed="true">Single Pick</button>
+            <button class="btn btn-ghost btn-sm gn-mode-btn" data-mode="plan" type="button" aria-pressed="false">Plan Evening</button>
           </div>
           <div class="form-grid" style="margin-bottom:12px">
             <div class="form-group">
@@ -4327,7 +4441,11 @@ if ('serviceWorker' in navigator) {
     let gnMode = 'suggest';
     function updateMode(mode) {
       gnMode = mode;
-      inner.querySelectorAll('.gn-mode-btn').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
+      inner.querySelectorAll('.gn-mode-btn').forEach(b => {
+        const isActive = b.dataset.mode === mode;
+        b.classList.toggle('active', isActive);
+        b.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+      });
       const isPlan = mode === 'plan';
       inner.querySelector('.gn-plan-options').style.display = isPlan ? '' : 'none';
       inner.querySelector('.gn-time-label-suggest').style.display = isPlan ? 'none' : '';
@@ -4413,9 +4531,13 @@ if ('serviceWorker' in navigator) {
           </div>`).join('')}</div><div class="gn-plan-total">${escapeHtml(totalLabel)}</div>`;
 
         resultsEl.querySelectorAll('.gn-plan-slot').forEach(el => {
-          el.addEventListener('click', () => {
+          const open = () => {
             const game = state.games.find(g => g.id === +el.dataset.gameId);
             if (game) { close(); openGameModal(game); }
+          };
+          el.addEventListener('click', open);
+          el.addEventListener('keydown', e => {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); }
           });
         });
       }
@@ -4484,10 +4606,14 @@ if ('serviceWorker' in navigator) {
         });
 
         resultsEl.querySelectorAll('.game-night-item').forEach(el => {
-          el.addEventListener('click', e => {
+          const open = (e) => {
             if (e.target.closest('.gn-dismiss-btn')) return;
             const game = state.games.find(g => g.id === +el.dataset.gameId);
             if (game) { close(); openGameModal(game); }
+          };
+          el.addEventListener('click', open);
+          el.addEventListener('keydown', e => {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(e); }
           });
         });
       }
@@ -4926,9 +5052,12 @@ if ('serviceWorker' in navigator) {
           : '<li class="restore-preview-empty">(empty)</li>';
 
         const content = `
-          <div class="restore-preview" role="dialog" aria-modal="true" aria-label="Backup Preview">
+          <div class="restore-preview" role="dialog" aria-modal="true" aria-labelledby="restore-preview-title">
             <div class="restore-preview-header">
-              <h3>Backup Preview</h3>
+              <h3 id="restore-preview-title">Backup Preview</h3>
+              <button class="restore-preview-close" aria-label="Close">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+              </button>
             </div>
             <div class="restore-preview-stats">
               <div class="restore-preview-stat"><span class="restore-preview-num">${preview.game_count}</span> games</div>
@@ -4961,29 +5090,60 @@ if ('serviceWorker' in navigator) {
         overlay.innerHTML = content;
         document.body.appendChild(overlay);
 
+        const dialog = overlay.querySelector('.restore-preview');
+        const closeBtn = overlay.querySelector('.restore-preview-close');
         const cancelBtn = overlay.querySelector('#restore-preview-cancel');
         const confirmBtn = overlay.querySelector('#restore-preview-confirm');
+        const prevFocus = document.activeElement;
+        pushModalOpen();
 
         const close = () => {
           document.removeEventListener('keydown', onKey);
-          overlay.remove();
+          document.removeEventListener('keydown', trapFocus);
+          overlay.classList.remove('open');
+          dialog.classList.remove('open');
+          setTimeout(() => {
+            overlay.remove();
+            popModalOpen();
+            if (prevFocus && prevFocus.focus) prevFocus.focus();
+          }, 180);
           restoreInput.value = '';
         };
 
         const onKey = (e) => {
-          if (e.key === 'Escape') { e.preventDefault(); close(); }
+          if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); }
         };
+
+        const FOCUSABLE = 'button:not([disabled]),[href],input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
+        const trapFocus = (e) => {
+          if (e.key !== 'Tab') return;
+          const focusable = dialog.querySelectorAll(FOCUSABLE);
+          if (!focusable.length) return;
+          const first = focusable[0];
+          const last = focusable[focusable.length - 1];
+          if (e.shiftKey && document.activeElement === first) {
+            e.preventDefault();
+            last.focus();
+          } else if (!e.shiftKey && document.activeElement === last) {
+            e.preventDefault();
+            first.focus();
+          }
+        };
+
         document.addEventListener('keydown', onKey);
+        document.addEventListener('keydown', trapFocus);
 
         overlay.addEventListener('click', (e) => {
           if (e.target === overlay) close();
         });
         cancelBtn.addEventListener('click', close);
+        closeBtn.addEventListener('click', close);
         confirmBtn.addEventListener('click', async () => {
           close();
           const confirmed = await showConfirm(
             'Restore from Backup',
-            'This will replace all current data. This cannot be undone. Continue?'
+            'This will replace all current data. This cannot be undone. Continue?',
+            { confirmLabel: 'Restore', danger: false }
           );
           if (!confirmed) return;
           try {
@@ -4997,8 +5157,11 @@ if ('serviceWorker' in navigator) {
           }
         });
 
-        requestAnimationFrame(() => overlay.classList.add('open'));
-        cancelBtn.focus();
+        requestAnimationFrame(() => {
+          overlay.classList.add('open');
+          dialog.classList.add('open');
+          cancelBtn.focus();
+        });
       }
     }
 
@@ -5510,7 +5673,7 @@ if ('serviceWorker' in navigator) {
           const msg = expired
             ? 'Remove this expired link?'
             : 'This will break anyone currently using this link. Continue?';
-          const ok = await showConfirm('Revoke Link', msg);
+          const ok = await showConfirm('Revoke Link', msg, { confirmLabel: 'Revoke' });
           if (!ok) return;
           try {
             await withLoading(btn, async () => {
@@ -5557,12 +5720,12 @@ if ('serviceWorker' in navigator) {
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="18" height="18"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         </button>
       </div>
-      <div class="share-modal-tabs">
-        <button class="share-tab active" data-tab="links">Links</button>
-        <button class="share-tab" data-tab="requests">Requests${unseenCount > 0 ? ` <span class="share-req-badge">${unseenCount}</span>` : ''}</button>
+      <div class="share-modal-tabs" role="tablist" aria-label="Share management sections">
+        <button class="share-tab active" data-tab="links" role="tab" id="share-tab-btn-links" aria-selected="true" aria-controls="share-tab-links">Links</button>
+        <button class="share-tab" data-tab="requests" role="tab" id="share-tab-btn-requests" aria-selected="false" aria-controls="share-tab-requests">Requests${unseenCount > 0 ? ` <span class="share-req-badge" aria-label="${unseenCount} unseen">${unseenCount}</span>` : ''}</button>
       </div>
       <div class="modal-body">
-        <div id="share-tab-links">
+        <div id="share-tab-links" role="tabpanel" aria-labelledby="share-tab-btn-links">
           <div class="share-token-list" id="share-token-list"></div>
           <div class="share-create-section">
             <div class="section-label">New Link</div>
@@ -5583,7 +5746,7 @@ if ('serviceWorker' in navigator) {
             <button class="btn btn-secondary" id="share-export-pdf-btn">Download PDF</button>
           </div>
         </div>
-        <div id="share-tab-requests" style="display:none">
+        <div id="share-tab-requests" style="display:none" role="tabpanel" aria-labelledby="share-tab-btn-requests">
           <div id="share-requests-list"></div>
         </div>
       </div>`;
@@ -5600,13 +5763,33 @@ if ('serviceWorker' in navigator) {
     }
 
     // Tab switching
-    el.querySelectorAll('.share-tab').forEach(tab => {
-      tab.addEventListener('click', () => {
-        el.querySelectorAll('.share-tab').forEach(t => t.classList.remove('active'));
-        tab.classList.add('active');
-        const target = tab.dataset.tab;
-        el.querySelector('#share-tab-links').style.display = target === 'links' ? '' : 'none';
-        el.querySelector('#share-tab-requests').style.display = target === 'requests' ? '' : 'none';
+    const _shareTabs = Array.from(el.querySelectorAll('.share-tab'));
+    _shareTabs.forEach((tab, i) => { tab.setAttribute('tabindex', i === 0 ? '0' : '-1'); });
+    function _activateTab(target) {
+      _shareTabs.forEach(t => {
+        const isActive = t === target;
+        t.classList.toggle('active', isActive);
+        t.setAttribute('aria-selected', isActive ? 'true' : 'false');
+        t.setAttribute('tabindex', isActive ? '0' : '-1');
+        const tgt = t.dataset.tab;
+        el.querySelector('#share-tab-links').style.display = tgt === 'links' ? '' : 'none';
+        el.querySelector('#share-tab-requests').style.display = tgt === 'requests' ? '' : 'none';
+      });
+      target.focus();
+    }
+    _shareTabs.forEach(tab => {
+      tab.addEventListener('click', () => _activateTab(tab));
+      tab.addEventListener('keydown', (e) => {
+        if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+          e.preventDefault();
+          const idx = _shareTabs.indexOf(tab);
+          const next = e.key === 'ArrowRight' ? (idx + 1) % _shareTabs.length : (idx - 1 + _shareTabs.length) % _shareTabs.length;
+          _activateTab(_shareTabs[next]);
+        } else if (e.key === 'Home') {
+          e.preventDefault(); _activateTab(_shareTabs[0]);
+        } else if (e.key === 'End') {
+          e.preventDefault(); _activateTab(_shareTabs[_shareTabs.length - 1]);
+        }
       });
     });
 
@@ -5642,7 +5825,7 @@ if ('serviceWorker' in navigator) {
               // Remove badge from tab if all seen
               const remaining = requests.filter(r => !r.seen).length;
               const badge = el.querySelector('.share-req-badge');
-              if (badge) { remaining > 0 ? (badge.textContent = remaining) : badge.remove(); }
+              if (badge) { if (remaining > 0) { badge.textContent = remaining; badge.setAttribute('aria-label', `${remaining} unseen`); } else badge.remove(); }
               updateShareBadge();
             }, '…');
           } catch (_) { /* non-fatal */ }
@@ -5662,7 +5845,7 @@ if ('serviceWorker' in navigator) {
               }
               const remaining = requests.filter(r => !r.seen).length;
               const badge = el.querySelector('.share-req-badge');
-              if (badge) { remaining > 0 ? (badge.textContent = remaining) : badge.remove(); }
+              if (badge) { if (remaining > 0) { badge.textContent = remaining; badge.setAttribute('aria-label', `${remaining} unseen`); } else badge.remove(); }
               updateShareBadge();
             }, '…');
           } catch (_) { /* non-fatal */ }

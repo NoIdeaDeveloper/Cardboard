@@ -43,7 +43,7 @@
       // simpler fallback. Canonical: ui-helpers.js:190 placeholderSvg.
       const div = document.createElement('div');
       div.className = 'placeholder-image';
-      div.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>';
+      div.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>';
       img.parentNode.replaceChild(div, img);
     }
     function renderStars(rating) {
@@ -103,7 +103,7 @@
       const status = game.status && game.status !== 'owned' ? `<span class="status-badge status-${escapeHtml(game.status)}">${escapeHtml(game.status.charAt(0).toUpperCase()+game.status.slice(1))}</span>` : '';
       el.innerHTML = `
         <div class="game-card-image">
-          ${safeImgUrl(game.image_url) ? `<img src="${escapeHtml(game.image_url)}" alt="" loading="lazy" data-fallback="1">` : '<div class="placeholder-image"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg></div>'}
+          ${safeImgUrl(game.image_url) ? `<img src="${escapeHtml(game.image_url)}" alt="" loading="lazy" data-fallback="1">` : '<div class="placeholder-image"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg></div>'}
         </div>
         <div class="game-card-body">
           <div class="game-card-title-row">
@@ -119,7 +119,12 @@
             ${labels ? `<div class="label-chips">${labels}</div>` : ''}
           </div>
         </div>`;
-      el.addEventListener('click', () => openGameDetail(game));
+      el.setAttribute('role', 'button');
+      el.setAttribute('tabindex', '0');
+      el.setAttribute('aria-label', `View details for ${game.name}`);
+      const _activate = () => openGameDetail(game);
+      el.addEventListener('click', _activate);
+      el.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); _activate(); } });
       const img = el.querySelector('img[data-fallback]');
       if (img) img.addEventListener('error', () => imgFallback(img));
       return el;
@@ -157,7 +162,7 @@
       function fresh_img(g) {
         return g.image_url && safeImgUrl(g.image_url)
           ? `<img src="${escapeHtml(g.image_url)}" alt="${escapeHtml(g.name)}" class="modal-hero-image" loading="lazy">`
-          : `<div class="modal-hero-placeholder"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="48" height="48"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg></div>`;
+          : `<div class="modal-hero-placeholder"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="48" height="48" aria-hidden="true"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg></div>`;
       }
 
       inner.innerHTML = `
@@ -183,16 +188,18 @@
           ${game.description ? `<div class="modal-section"><div class="section-label">Description</div><p>${escapeHtml(game.description)}</p></div>` : ''}
           ${!staticData ? `<div class="modal-section want-to-play-section" id="want-to-play-section">
             ${localStorage.getItem('wtp_' + token + '_' + game.id) ? '<p class="wtp-already-sent">✓ You already requested this game!</p>' : '<button class="btn btn-secondary" id="want-to-play-btn">🙋 Want to Play</button>'}
-            <div id="want-to-play-form" style="display:none">
-              <div class="form-group" style="margin-top:8px">
-                <input type="text" id="wtp-name" class="input" placeholder="Your name (optional)" maxlength="100" />
-              </div>
-              <div class="form-group" style="margin-top:6px">
-                <textarea id="wtp-message" class="input" placeholder="Message (optional)" maxlength="500" rows="3" style="resize:vertical;width:100%;box-sizing:border-box"></textarea>
-              </div>
-              <div style="display:flex;gap:8px;margin-top:6px">
-                <button class="btn btn-primary" id="wtp-submit-btn">Send Request</button>
-                <button class="btn btn-ghost" id="wtp-cancel-btn">Cancel</button>
+            <div id="want-to-play-form" class="ql-hidden">
+              <div class="wtp-form">
+                <div class="form-group">
+                  <input type="text" id="wtp-name" class="input" placeholder="Your name (optional)" maxlength="100" />
+                </div>
+                <div class="form-group">
+                  <textarea id="wtp-message" class="input wtp-textarea" placeholder="Message (optional)" maxlength="500" rows="3"></textarea>
+                </div>
+                <div class="wtp-form-actions">
+                  <button class="btn btn-primary" id="wtp-submit-btn">Send Request</button>
+                  <button class="btn btn-ghost" id="wtp-cancel-btn">Cancel</button>
+                </div>
               </div>
             </div>
           </div>` : ''}
@@ -201,11 +208,11 @@
             <div class="section-label">Share</div>
             <div class="share-buttons-row">
               <button class="btn btn-secondary" id="share-bgg-wa-btn">
-                <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14" style="margin-right:5px;vertical-align:middle"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M11.5 2C6.262 2 2 6.262 2 11.5c0 1.865.518 3.609 1.42 5.101L2 22l5.578-1.395A9.45 9.45 0 0 0 11.5 21C16.738 21 21 16.738 21 11.5S16.738 2 11.5 2zm0 17.25a7.73 7.73 0 0 1-3.944-1.076l-.283-.168-2.933.733.766-2.855-.185-.295A7.718 7.718 0 0 1 3.75 11.5C3.75 7.226 7.226 3.75 11.5 3.75S19.25 7.226 19.25 11.5 15.774 19.25 11.5 19.25z"/></svg>
+                <svg class="share-btn-icon" viewBox="0 0 24 24" fill="currentColor" width="14" height="14" aria-hidden="true"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M11.5 2C6.262 2 2 6.262 2 11.5c0 1.865.518 3.609 1.42 5.101L2 22l5.578-1.395A9.45 9.45 0 0 0 11.5 21C16.738 21 21 16.738 21 11.5S16.738 2 11.5 2zm0 17.25a7.73 7.73 0 0 1-3.944-1.076l-.283-.168-2.933.733.766-2.855-.185-.295A7.718 7.718 0 0 1 3.75 11.5C3.75 7.226 7.226 3.75 11.5 3.75S19.25 7.226 19.25 11.5 15.774 19.25 11.5 19.25z"/></svg>
                 WhatsApp
               </button>
               <button class="btn btn-secondary" id="share-bgg-signal-btn">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14" style="margin-right:5px;vertical-align:middle"><path d="M4 12v1a8 8 0 0 0 8 8h1"/><path d="M20 12v-1a8 8 0 0 0-8-8h-1"/><path d="M12 4V2"/><path d="M12 22v-2"/><path d="M4.93 4.93l-1.42-1.42"/><path d="M19.07 4.93l1.42-1.42"/><path d="M20.49 17.66l1.41 1.41"/><path d="M3.51 17.66l-1.41 1.41"/></svg>
+                <svg class="share-btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14" aria-hidden="true"><path d="M4 12v1a8 8 0 0 0 8 8h1"/><path d="M20 12v-1a8 8 0 0 0-8-8h-1"/><path d="M12 4V2"/><path d="M12 22v-2"/><path d="M4.93 4.93l-1.42-1.42"/><path d="M19.07 4.93l1.42-1.42"/><path d="M20.49 17.66l1.41 1.41"/><path d="M3.51 17.66l-1.41 1.41"/></svg>
                 Signal
               </button>
             </div>
@@ -231,15 +238,16 @@
       const wtpCancel = inner.querySelector('#wtp-cancel-btn');
       if (wtpBtn) {
         wtpBtn.addEventListener('click', () => {
-          wtpBtn.style.display = 'none';
-          wtpForm.style.display = 'block';
+          wtpBtn.classList.add('ql-hidden');
+          wtpForm.classList.remove('ql-hidden');
         });
         wtpCancel.addEventListener('click', () => {
-          wtpForm.style.display = 'none';
-          wtpBtn.style.display = '';
+          wtpForm.classList.add('ql-hidden');
+          wtpBtn.classList.remove('ql-hidden');
         });
         wtpSubmit.addEventListener('click', async () => {
           wtpSubmit.disabled = true;
+          wtpSubmit.textContent = 'Sending…';
           const name = inner.querySelector('#wtp-name').value.trim();
           const msg = inner.querySelector('#wtp-message').value.trim();
           try {
@@ -253,6 +261,7 @@
           } catch (err) {
             showToast(err.message || 'Failed to send request', 'error');
             wtpSubmit.disabled = false;
+            wtpSubmit.textContent = 'Send Request';
           }
         });
       }

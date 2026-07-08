@@ -95,22 +95,63 @@ function showMilestoneToast(message, gameId, onClickGame) {
   setTimeout(() => _hideToast(toast), 5000);
 }
 
-function showConfirm(title, message) {
+function showConfirm(title, message, opts = {}) {
+  const { confirmLabel = 'Remove', cancelLabel = 'Cancel', danger = true } = opts;
   return new Promise(resolve => {
     const overlay = document.createElement('div');
     overlay.className = 'confirm-overlay';
+    const titleId = 'confirm-title-' + Math.random().toString(36).slice(2, 8);
+    const msgId = 'confirm-msg-' + Math.random().toString(36).slice(2, 8);
     overlay.innerHTML = `
-      <div class="confirm-dialog">
-        <h3 class="confirm-title">${escapeHtml(title)}</h3>
-        <p class="confirm-message">${escapeHtml(message)}</p>
+      <div class="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="${titleId}" aria-describedby="${msgId}">
+        <h3 class="confirm-title" id="${titleId}">${escapeHtml(title)}</h3>
+        <p class="confirm-message" id="${msgId}">${escapeHtml(message)}</p>
         <div class="confirm-actions">
-          <button class="btn btn-secondary" id="confirm-cancel">Cancel</button>
-          <button class="btn btn-danger" id="confirm-ok">Remove</button>
+          <button class="btn btn-secondary" id="confirm-cancel">${escapeHtml(cancelLabel)}</button>
+          <button class="btn ${danger ? 'btn-danger' : 'btn-primary'}" id="confirm-ok">${escapeHtml(confirmLabel)}</button>
         </div>
       </div>`;
     document.body.appendChild(overlay);
-    overlay.querySelector('#confirm-cancel').addEventListener('click', () => { overlay.remove(); resolve(false); });
-    overlay.querySelector('#confirm-ok').addEventListener('click', () => { overlay.remove(); resolve(true); });
+    const dialog = overlay.querySelector('.confirm-dialog');
+    const cancelBtn = overlay.querySelector('#confirm-cancel');
+    const okBtn = overlay.querySelector('#confirm-ok');
+    const prevFocus = document.activeElement;
+    if (typeof pushModalOpen === 'function') pushModalOpen();
+
+    const FOCUSABLE = 'button:not([disabled]),[href],input:not([disabled]),[tabindex]:not([tabindex="-1"])';
+    function trap(e) {
+      if (e.key !== 'Tab') return;
+      const f = dialog.querySelectorAll(FOCUSABLE);
+      if (!f.length) return;
+      const first = f[0], last = f[f.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    }
+    function close(result) {
+      document.removeEventListener('keydown', trap);
+      document.removeEventListener('keydown', onKey);
+      overlay.removeEventListener('click', onBackdrop);
+      overlay.classList.remove('open');
+      dialog.classList.remove('open');
+      setTimeout(() => {
+        overlay.remove();
+        if (typeof popModalOpen === 'function') popModalOpen();
+        if (prevFocus && prevFocus.focus) try { prevFocus.focus(); } catch (_) {}
+        resolve(result);
+      }, 160);
+    }
+    function onKey(e) { if (e.key === 'Escape') { e.stopPropagation(); close(false); } }
+    function onBackdrop(e) { if (e.target === overlay) close(false); }
+    cancelBtn.addEventListener('click', () => close(false));
+    okBtn.addEventListener('click', () => close(true));
+    overlay.addEventListener('click', onBackdrop);
+    document.addEventListener('keydown', onKey);
+    document.addEventListener('keydown', trap);
+    requestAnimationFrame(() => {
+      overlay.classList.add('open');
+      dialog.classList.add('open');
+      cancelBtn.focus();
+    });
   });
 }
 

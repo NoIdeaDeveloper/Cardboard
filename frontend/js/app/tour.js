@@ -47,10 +47,16 @@ const TOUR_STEPS = [
   },
 ];
 
+let _tourActive = false;
+
 export function startTour() {
+  if (_tourActive) return;
+  _tourActive = true;
   let step = 0;
   const overlay  = document.getElementById('tour-overlay');
   const tooltip  = document.getElementById('tour-tooltip');
+  const prevFocus = document.activeElement;
+  let rafId = null;
 
   // Create spotlight ring element
   let spotlight = document.getElementById('tour-spotlight');
@@ -72,6 +78,7 @@ export function startTour() {
   }
 
   function _positionStep(i) {
+    if (!_tourActive) return;
     const { targetId, text } = TOUR_STEPS[i];
     const target = document.getElementById(targetId);
     if (!target) { nextStep(); return; }
@@ -97,11 +104,13 @@ export function startTour() {
     spotlight.style.height = `${rect.height + PAD * 2}px`;
 
     // Place tooltip below target, clamped to viewport
-    const tipLeft = Math.min(Math.max(rect.left, 12), window.innerWidth - 320 - 12);
+    const tipWidth = window.innerWidth < 400 ? window.innerWidth - 24 : 320;
+    const tipLeft = Math.min(Math.max(rect.left, 12), window.innerWidth - tipWidth - 12);
     const tipTop  = rect.bottom + PAD + 8;
 
     tooltip.innerHTML = `
-      <p id="tour-tooltip-text">${escapeHtml(text)}</p>
+      <p id="tour-tooltip-text" aria-live="polite">${escapeHtml(text)}</p>
+      <div class="tour-step-counter">${i + 1} of ${TOUR_STEPS.length}</div>
       <div class="tour-btn-row">
         <button class="tour-btn tour-btn-skip" id="tour-skip">Skip tour</button>
         <button class="tour-btn tour-btn-next" id="tour-next">${isLast ? 'Done' : 'Got it \u2192'}</button>
@@ -109,10 +118,29 @@ export function startTour() {
     tooltip.style.left = `${tipLeft}px`;
     tooltip.style.top  = `${tipTop}px`;
     tooltip.style.display = 'block';
+    tooltip.classList.add('open');
 
-    tooltip.querySelector('#tour-next').addEventListener('click', nextStep);
+    const nextBtn = tooltip.querySelector('#tour-next');
+    nextBtn.addEventListener('click', nextStep);
     tooltip.querySelector('#tour-skip').addEventListener('click', endTour);
+    requestAnimationFrame(() => nextBtn.focus());
   }
+
+  function _onScrollOrResize() {
+    if (rafId) cancelAnimationFrame(rafId);
+    rafId = requestAnimationFrame(() => _positionStep(step));
+  }
+
+  function _onKeyDown(e) {
+    if (e.key === 'Escape') {
+      e.stopPropagation();
+      endTour();
+    }
+  }
+
+  document.addEventListener('scroll', _onScrollOrResize, { passive: true });
+  window.addEventListener('resize', _onScrollOrResize);
+  document.addEventListener('keydown', _onKeyDown, true);
 
   function nextStep() {
     step += 1;
@@ -121,10 +149,18 @@ export function startTour() {
   }
 
   async function endTour() {
+    if (!_tourActive) return;
+    _tourActive = false;
     overlay.style.display   = 'none';
     tooltip.style.display   = 'none';
+    tooltip.classList.remove('open');
     spotlight.style.display = 'none';
+    document.removeEventListener('scroll', _onScrollOrResize);
+    window.removeEventListener('resize', _onScrollOrResize);
+    document.removeEventListener('keydown', _onKeyDown, true);
+    if (rafId) cancelAnimationFrame(rafId);
     _tourCheckDone = true;
+    if (prevFocus && prevFocus.focus) try { prevFocus.focus(); } catch (_) { /* detached */ }
     try { localStorage.setItem(TOUR_DONE_KEY, '1'); } catch (_) { /* quota or private browsing */ }
     // Await the server call so the flag persists even across browsers/devices.
     // Without this, closing the tab immediately after completing the tour can
@@ -161,6 +197,10 @@ export async function maybeStartTour() {
 }
 
 export async function resetTour() {
+  if (_tourActive) {
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    await new Promise(r => setTimeout(r, 50));
+  }
   try { localStorage.removeItem(TOUR_DONE_KEY); } catch (_) { /* quota or unavailable */ }
   try { await API.setSetting(TOUR_DONE_KEY, ''); } catch (_) { /* non-fatal */ }
   _tourCheckDone = false;
