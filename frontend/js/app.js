@@ -3807,7 +3807,7 @@ if ('serviceWorker' in navigator) {
     document.addEventListener('click', e => {
       if (!e.target.closest('#bgg-search-bar')) results.style.display = 'none';
     });
-    bggInput.addEventListener('keydown', e => {
+    input.addEventListener('keydown', e => {
       if (e.key === 'Escape') results.style.display = 'none';
     });
   }

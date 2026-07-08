@@ -38,6 +38,7 @@ function _renderChipInput(containerId, initialTags, placeholder, datalistId) {
   // Input field
   const input = document.createElement('input');
   input.type = 'text';
+  input.id = `${containerId}-input`;
   input.placeholder = placeholder;
   if (datalistId) input.setAttribute('list', datalistId);
   input.autocomplete = 'off';
@@ -719,23 +720,23 @@ function buildModalContent(opts) {
             <span class="field-error" id="err-difficulty"></span>
           </div>
           <div class="form-group full-width">
-            <label for="edit-categories">Categories <span class="hint">(type and press Enter)</span></label>
+            <label for="edit-categories-input">Categories <span class="hint">(type and press Enter)</span></label>
             <div id="edit-categories" class="chip-input" data-list="dl-categories"></div>
           </div>
           <div class="form-group full-width">
-            <label for="edit-mechanics">Mechanics <span class="hint">(type and press Enter)</span></label>
+            <label for="edit-mechanics-input">Mechanics <span class="hint">(type and press Enter)</span></label>
             <div id="edit-mechanics" class="chip-input" data-list="dl-mechanics"></div>
           </div>
           <div class="form-group full-width">
-            <label for="edit-designers">Designers <span class="hint">(type and press Enter)</span></label>
+            <label for="edit-designers-input">Designers <span class="hint">(type and press Enter)</span></label>
             <div id="edit-designers" class="chip-input" data-list="dl-designers"></div>
           </div>
           <div class="form-group full-width">
-            <label for="edit-publishers">Publishers <span class="hint">(type and press Enter)</span></label>
+            <label for="edit-publishers-input">Publishers <span class="hint">(type and press Enter)</span></label>
             <div id="edit-publishers" class="chip-input" data-list="dl-publishers"></div>
           </div>
           <div class="form-group full-width">
-            <label for="edit-labels">Labels <span class="hint">(type and press Enter)</span></label>
+            <label for="edit-labels-input">Labels <span class="hint">(type and press Enter)</span></label>
             <div id="edit-labels" class="chip-input" data-list="dl-labels"></div>
           </div>
           ${baseGameEditHtml}
