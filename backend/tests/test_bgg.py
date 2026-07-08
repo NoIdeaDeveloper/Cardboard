@@ -1,9 +1,8 @@
 """Tests for BGG description HTML sanitization and the sanitize_html_to_text helper."""
 import xml.etree.ElementTree as ET
 
-from utils import sanitize_html_to_text
 from routers.games.bgg import _parse_bgg_item
-
+from utils import sanitize_html_to_text
 
 # ---------------------------------------------------------------------------
 # sanitize_html_to_text unit tests

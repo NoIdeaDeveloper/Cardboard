@@ -1,5 +1,5 @@
 import pytest
-from elo import compute_elo_updates, batch_recalculate_elo, _k_factor, _expected_score
+from elo import _expected_score, _k_factor, batch_recalculate_elo, compute_elo_updates
 
 
 class TestKFactor:

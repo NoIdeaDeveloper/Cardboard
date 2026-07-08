@@ -4,17 +4,18 @@ import re
 import shutil
 import time
 from contextlib import asynccontextmanager
+
+from database import Base, engine, get_db
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from routers import game_images, games, goals, maintenance, notifications, players, sessions, settings, sharing, stats
 from sqlalchemy import text
 from sqlalchemy.orm import Session
-
-from database import Base, engine, get_db
-from routers import games, sessions, stats, game_images, players, sharing, goals, settings, notifications, maintenance
+from utils import require_api_key
 
 # Regex patterns for redacting share tokens from logged request paths.
 # Matches /api/share/{token}/games[/{game_id}[/want-to-play]] and /api/share/tokens/{token}
@@ -104,7 +105,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=_ALLOWED_ORIGINS,
     allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Content-Type"],
+    allow_headers=["Content-Type", "X-API-Key"],
 )
 
 
@@ -171,14 +172,39 @@ _MEDIA_SUBDIRS = ["images", "instructions", "gallery", "avatars"]
 
 
 @app.delete("/api/everything", status_code=200)
-def wipe_all_data(body: WipeConfirm, db: Session = Depends(get_db)):
+def wipe_all_data(body: WipeConfirm, request: Request, db: Session = Depends(get_db)):
     """Factory-reset endpoint: drop all rows from every table and delete all media files.
 
     Requires a confirmation payload ``{"confirm": "DELETE EVERYTHING"}`` to prevent
-    accidental triggers. Documented under "Uninstall" in the README.
+    accidental triggers. Documented under "Uninstall" in the README. When
+    ``CARDBOARD_API_KEY`` is set, an ``X-API-Key`` header is also required.
     """
+    require_api_key(request)
     if body.confirm != "DELETE EVERYTHING":
         raise HTTPException(status_code=400, detail="Confirmation string mismatch")
+
+    # Validate DATA_DIR before any mutation so a bad config doesn't half-wipe.
+    data_dir = os.getenv("DATA_DIR", "/app/data")
+    real_data_dir = os.path.realpath(data_dir)
+    # Refuse to wipe if DATA_DIR resolves to a filesystem root or system path.
+    _system_paths = {os.path.realpath(p) for p in (
+        "/", "/app", "/etc", "/usr", "/var", "/tmp", os.path.expanduser("~"),
+    )}
+    if real_data_dir in _system_paths or real_data_dir == os.path.dirname(real_data_dir):
+        raise HTTPException(
+            status_code=500,
+            detail="DATA_DIR resolves to a system path; refusing to wipe",
+        )
+    # Resolve every subdir up front and verify it stays inside DATA_DIR.
+    resolved_subdirs = []
+    for subdir in _MEDIA_SUBDIRS:
+        dir_path = os.path.realpath(os.path.join(data_dir, subdir))
+        if os.path.commonpath([real_data_dir, dir_path]) != real_data_dir:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Refusing to wipe path outside DATA_DIR: {subdir}",
+            )
+        resolved_subdirs.append(dir_path)
 
     # Delete all rows in FK-safe order (children first, parents last).
     tables = list(reversed(Base.metadata.sorted_tables))
@@ -189,10 +215,8 @@ def wipe_all_data(body: WipeConfirm, db: Session = Depends(get_db)):
     db.commit()
 
     # Delete media files from each subdir, then recreate empty dirs.
-    data_dir = os.getenv("DATA_DIR", "/app/data")
     media_dirs_cleared = 0
-    for subdir in _MEDIA_SUBDIRS:
-        dir_path = os.path.join(data_dir, subdir)
+    for dir_path in resolved_subdirs:
         if os.path.isdir(dir_path):
             shutil.rmtree(dir_path)
         os.makedirs(dir_path, exist_ok=True)

@@ -5,6 +5,14 @@
 
 const API_BASE = '/api';
 
+// Optional API key for destructive endpoints. When the backend has
+// CARDBOARD_API_KEY set, the user enters the key once (stored in
+// localStorage under 'cardboard_api_key') and every request carries it as an
+// X-API-Key header. When the backend has no key configured, this is a no-op.
+function _apiKey() {
+  try { return localStorage.getItem('cardboard_api_key') || ''; } catch { return ''; }
+}
+
 // Response cache: stores { etag, data, headers } per GET path so that a 304
 // reply can be resolved from the body we saw the last time the ETag changed.
 // Headers are snapshotted into a fresh Headers instance so later fetches can't
@@ -24,6 +32,8 @@ function invalidateCollectionEtag() {
 
 async function request(method, path, body = null) {
   const opts = { method, headers: {} };
+  const _key = _apiKey();
+  if (_key) opts.headers['X-API-Key'] = _key;
   if (body !== null) {
     opts.headers['Content-Type'] = 'application/json';
     opts.body = JSON.stringify(body);
@@ -60,6 +70,8 @@ async function request(method, path, body = null) {
 // Like request() but also returns response headers for endpoints that expose metadata.
 async function requestWithMeta(method, path, body = null) {
   const opts = { method, headers: {} };
+  const _key = _apiKey();
+  if (_key) opts.headers['X-API-Key'] = _key;
   if (body !== null) {
     opts.headers['Content-Type'] = 'application/json';
     opts.body = JSON.stringify(body);
@@ -97,7 +109,10 @@ async function requestWithMeta(method, path, body = null) {
 async function uploadFile(path, file) {
   const fd = new FormData();
   fd.append('file', file);
-  const resp = await fetch(`${API_BASE}${path}`, { method: 'POST', body: fd });
+  const headers = {};
+  const _key = _apiKey();
+  if (_key) headers['X-API-Key'] = _key;
+  const resp = await fetch(`${API_BASE}${path}`, { method: 'POST', body: fd, headers });
   if (resp.status === 204) return null;
   const data = await resp.json().catch(() => ({ detail: resp.statusText }));
   if (!resp.ok) {

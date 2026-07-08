@@ -19,6 +19,9 @@
     }
 
     function showToast(msg, type = 'info') {
+      // NOTE: duplicates ui-helpers.showToast but with a `show` class transition
+      // (share.html doesn't load ui-helpers.js). Keep in sync if you change the
+      // toast styling contract. Canonical version: ui-helpers.js:69.
       const container = document.getElementById('toast-container');
       if (!container) return;
       const toast = document.createElement('div');
@@ -29,16 +32,24 @@
       setTimeout(() => { toast.classList.remove('show'); setTimeout(() => toast.remove(), 300); }, 3500);
     }
     function safeImgUrl(url) {
+      // NOTE: returns url|null; ui-helpers.isSafeUrl returns boolean. Same allowlist.
+      // Canonical: ui-helpers.js:185 isSafeUrl.
       if (!url) return null;
       return url.startsWith('/api/') || url.startsWith('https://') ? url : null;
     }
     function imgFallback(img) {
+      // NOTE: uses a 4-square grid placeholder; ui-helpers.placeholderSvg uses a
+      // board-game-box icon. Different visuals by design — share page ships a
+      // simpler fallback. Canonical: ui-helpers.js:190 placeholderSvg.
       const div = document.createElement('div');
       div.className = 'placeholder-image';
       div.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>';
       img.parentNode.replaceChild(div, img);
     }
     function renderStars(rating) {
+      // NOTE: returns '' for falsy rating; ui-helpers.renderStars always renders
+      // 10 empty stars in a <div class="rating-stars">. Different behavior by
+      // design — share page omits the unrated row. Canonical: ui-helpers.js:145.
       if (!rating) return '';
       const filled = Math.round(rating);
       return Array.from({length:10}, (_,i) =>
@@ -56,6 +67,9 @@
     let filterMechanics = [];
 
     function sortGames(arr) {
+      // NOTE: near-duplicate of app/sort.js sortGames, with an extra session_count
+      // branch (treats missing as 0 rather than null). share.js can't import the
+      // ES module without a build step. Canonical: frontend/js/app/sort.js:8.
       const asc = sortDir !== 'desc';
       return [...arr].sort((a, b) => {
         let av, bv;
@@ -87,7 +101,6 @@
         : `<span class="unrated">Unrated</span>`;
       const labels = parseList(game.labels).slice(0,3).map(l => `<span class="label-chip">${escapeHtml(l)}</span>`).join('');
       const status = game.status && game.status !== 'owned' ? `<span class="status-badge status-${escapeHtml(game.status)}">${escapeHtml(game.status.charAt(0).toUpperCase()+game.status.slice(1))}</span>` : '';
-      const wishlistExtra = '';
       el.innerHTML = `
         <div class="game-card-image">
           ${safeImgUrl(game.image_url) ? `<img src="${escapeHtml(game.image_url)}" alt="" loading="lazy" data-fallback="1">` : '<div class="placeholder-image"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg></div>'}
@@ -104,7 +117,6 @@
           <div class="game-card-footer">
             <div class="rating-row">${rating}</div>
             ${labels ? `<div class="label-chips">${labels}</div>` : ''}
-            ${wishlistExtra}
           </div>
         </div>`;
       el.addEventListener('click', () => openGameDetail(game));

@@ -7,15 +7,19 @@ after every router that exposes a literal path under /api/games.
 """
 from fastapi import APIRouter
 
-from routers.games import backup, bgg, imports, recommend, crud
+from routers.games import backup, bgg, crud, imports, recommend
 
 # Re-exported for external importers (routers.sharing, routers.stats) and for
 # tests that reach into module internals.
 from routers.games._common import (  # noqa: F401
-    _heat_level, _load_tags, _attach_parent_name, build_game_responses, IMAGES_DIR,
+    IMAGES_DIR,
+    _attach_parent_name,
+    _heat_level,
+    _load_tags,
+    build_game_responses,
 )
+from routers.games.backup import _cleanup_temp_backups, _temp_backup_files  # noqa: F401
 from routers.games.bgg import _bgg_buckets  # noqa: F401
-from routers.games.backup import _temp_backup_files, _cleanup_temp_backups  # noqa: F401
 
 router = APIRouter()
 router.include_router(backup.router)

@@ -1,7 +1,8 @@
 """Tests for share token creation and public collection access."""
 import logging
-import pytest
 from datetime import datetime, timedelta, timezone
+
+import pytest
 
 
 @pytest.fixture(autouse=True)
@@ -217,6 +218,7 @@ def test_want_to_play_via_header(client):
 def test_token_hashed_at_rest(client, db):
     """The DB must store sha256(token), not the raw token."""
     import hashlib
+
     import models
 
     data = client.post("/api/share/tokens").json()
@@ -236,8 +238,9 @@ def test_expired_token_deleted_on_access(client, db):
     data = client.post("/api/share/tokens?expires_in=10").json()
     raw_token = data["token"]
 
-    import models
     from datetime import datetime, timedelta, timezone
+
+    import models
 
     token_row = db.query(models.ShareToken).first()
     assert token_row is not None
@@ -329,8 +332,9 @@ def test_want_to_play_per_ip_rate_limit(client):
 
 def test_retention_sweep_deletes_old_requests(client, db):
     """Requests older than the retention window are deleted when the owner views them."""
-    import models
     import os
+
+    import models
 
     gid = _make_game(client, name="Old Request Game")
     token = client.post("/api/share/tokens").json()["token"]

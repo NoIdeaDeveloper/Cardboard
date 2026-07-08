@@ -1,7 +1,6 @@
 """Tests for game CRUD, list/search/sort, tag roundtrip, and expansion logic."""
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

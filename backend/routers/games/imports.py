@@ -6,15 +6,18 @@ import logging
 import xml.etree.ElementTree as ET
 
 import defusedxml.ElementTree as DefusedET
+import models
+from constants import (
+    BGG_IMPORT_MAX_BYTES,
+    BGG_PLAYS_MAX_BYTES,
+    CSV_IMPORT_MAX_BYTES,
+    NOTES_MAX_LENGTH,
+)
+from database import get_db
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from database import get_db
-import models
-from constants import (
-    BGG_IMPORT_MAX_BYTES, BGG_PLAYS_MAX_BYTES, CSV_IMPORT_MAX_BYTES, NOTES_MAX_LENGTH,
-)
 from routers.games._common import _save_tags
 
 logger = logging.getLogger("cardboard.games")

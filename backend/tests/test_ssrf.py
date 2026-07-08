@@ -1,11 +1,10 @@
 """Tests for SSRF protection and DNS-rebinding TOCTOU mitigation."""
+import http.client
 import socket
+import urllib.error
 from unittest import mock
 
-import http.client
 import pytest
-import urllib.error
-
 import utils
 
 

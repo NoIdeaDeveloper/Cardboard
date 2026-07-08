@@ -6,16 +6,15 @@ is idempotent via dedup_key — re-running it won't create duplicates for signal
 that already have an unread notification.
 """
 import logging
-from datetime import datetime, date, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import func
-from sqlalchemy.orm import Session
-
-from database import get_db
 import models
 import schemas
+from database import get_db
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import func
+from sqlalchemy.orm import Session
 
 logger = logging.getLogger("cardboard.notifications")
 router = APIRouter(prefix="/api/notifications", tags=["notifications"])
@@ -31,18 +30,28 @@ def _sweep_notifications(db: Session) -> int:
     now = datetime.now(timezone.utc)
     created = 0
 
-    # Get existing unread dedup keys to avoid duplicates
+    # Get existing unread dedup keys to avoid duplicates. Include dismissed
+    # tombstones so a user-dismissed notification won't be resurrected by
+    # later sweeps (the dedup_key is retained on the dismissed row).
     existing_unread = {
         row[0]
         for row in db.query(models.Notification.dedup_key)
         .filter(models.Notification.read_at.is_(None))
+        .filter(models.Notification.dismissed_at.is_(None))
+        .filter(models.Notification.dedup_key.isnot(None))
+        .all()
+    }
+    dismissed_keys = {
+        row[0]
+        for row in db.query(models.Notification.dedup_key)
+        .filter(models.Notification.dismissed_at.isnot(None))
         .filter(models.Notification.dedup_key.isnot(None))
         .all()
     }
 
     def _add(kind: str, title: str, body: str, action_url: str, dedup_key: str):
         nonlocal created
-        if dedup_key in existing_unread:
+        if dedup_key in existing_unread or dedup_key in dismissed_keys:
             return
         db.add(models.Notification(
             kind=kind, title=title, body=body,
@@ -87,7 +96,8 @@ def _sweep_notifications(db: Session) -> int:
     if owned_count >= 5:
         played_ids = {r.game_id for r in session_counts if r.play_count > 0}
         unplayed_owned = [g for g in owned_games if g.id not in played_ids]
-        play_pct = round((len(played_ids) / owned_count) * 100) if owned_count else 0
+        played_owned = owned_count - len(unplayed_owned)
+        play_pct = round((played_owned / owned_count) * 100) if owned_count else 0
         if unplayed_owned and play_pct < 50:
             _add(
                 "unplayed_owned",
@@ -98,42 +108,27 @@ def _sweep_notifications(db: Session) -> int:
             )
 
     # 3. Goal progress — goals that are 80%+ but not complete
-    goals = db.query(models.Goal).filter(models.Goal.is_complete == False).all()
-    for goal in goals:
-        # Compute current value inline (simplified — full computation is in goals.py)
-        if goal.type == "sessions_total":
-            current = db.query(func.count()).select_from(models.PlaySession).scalar() or 0
-        elif goal.type == "sessions_year":
-            year = goal.year or today.year
-            start = date(year, 1, 1)
-            end = date(year + 1, 1, 1)
-            current = (
-                db.query(func.count())
-                .select_from(models.PlaySession)
-                .filter(models.PlaySession.played_at >= start, models.PlaySession.played_at < end)
-                .scalar() or 0
-            )
-        elif goal.type == "unique_games_year":
-            year = goal.year or today.year
-            start = date(year, 1, 1)
-            end = date(year + 1, 1, 1)
-            current = (
-                db.query(func.count(func.distinct(models.PlaySession.game_id)))
-                .filter(models.PlaySession.played_at >= start, models.PlaySession.played_at < end)
-                .scalar() or 0
-            )
-        else:
-            continue  # Skip complex goal types for notification purposes
-
-        if goal.target_value > 0 and current >= goal.target_value * 0.8 and current < goal.target_value:
-            remaining = goal.target_value - current
-            _add(
-                "goal_progress",
-                f"Almost there: {goal.title}",
-                f"You're at {current}/{goal.target_value} — just {remaining} to go!",
-                "/?view=stats",
-                f"goal_progress:{goal.id}",
-            )
+    incomplete_goals = db.query(models.Goal).filter(models.Goal.is_complete == False).all()
+    # Only the count-based goal types trigger a goal_progress notification;
+    # other types are skipped to match the original behavior.
+    eligible_types = {"sessions_total", "sessions_year", "unique_games_year"}
+    eligible_goals = [g for g in incomplete_goals if g.type in eligible_types]
+    if eligible_goals:
+        # Reuse the goals batch helper to avoid N+1 (one query per type/year
+        # instead of one per goal) and to avoid duplicating the goal logic here.
+        from routers.goals import _compute_goal_values_batch
+        current_values = _compute_goal_values_batch(eligible_goals, db)
+        for goal in eligible_goals:
+            current = current_values.get(goal.id, 0)
+            if goal.target_value > 0 and current >= goal.target_value * 0.8 and current < goal.target_value:
+                remaining = goal.target_value - current
+                _add(
+                    "goal_progress",
+                    f"Almost there: {goal.title}",
+                    f"You're at {current}/{goal.target_value} — just {remaining} to go!",
+                    "/?view=stats",
+                    f"goal_progress:{goal.id}",
+                )
 
     # 4. Stale collection — no sessions in 3+ weeks (but has play history)
     last_session = (
@@ -178,23 +173,71 @@ def _sweep_notifications(db: Session) -> int:
     return created
 
 
+NOTIF_DEFAULT_LIMIT = 50
+NOTIF_MAX_LIMIT = 200
+NOTIF_RETENTION_DAYS = 90
+
+
+def _prune_old_notifications(db: Session) -> int:
+    """Hard-delete notifications older than the retention window.
+
+    Prunes:
+      - Dismissed tombstones (dismissed_at set) older than RETENTION_DAYS.
+      - Read notifications (read_at set) older than RETENTION_DAYS.
+    Unread notifications are never pruned — the user hasn't seen them yet.
+
+    Returns the number of rows deleted. After a tombstone is pruned, a future
+    sweep *could* resurrect the notification (the dedup signal is gone), but the
+    90-day window makes this unlikely to recur for the same signal.
+    """
+    cutoff = datetime.now(timezone.utc) - timedelta(days=NOTIF_RETENTION_DAYS)
+    deleted = (
+        db.query(models.Notification)
+        .filter(
+            models.Notification.read_at.isnot(None)
+            | models.Notification.dismissed_at.isnot(None),
+            models.Notification.created_at < cutoff,
+        )
+        .delete(synchronize_session=False)
+    )
+    if deleted:
+        db.commit()
+        logger.info("Pruned %d old notifications", deleted)
+    return deleted
+
+
 @router.get("/", response_model=List[schemas.NotificationResponse])
-def list_notifications(db: Session = Depends(get_db)):
-    """List all notifications, newest first."""
+def list_notifications(
+    db: Session = Depends(get_db),
+    limit: int = Query(NOTIF_DEFAULT_LIMIT, ge=1, le=NOTIF_MAX_LIMIT),
+    offset: int = Query(0, ge=0),
+):
+    """List non-dismissed notifications, newest first, paginated."""
     return (
         db.query(models.Notification)
+        .filter(models.Notification.dismissed_at.is_(None))
         .order_by(models.Notification.created_at.desc())
+        .offset(offset)
+        .limit(limit)
         .all()
     )
 
 
 @router.post("/refresh", response_model=List[schemas.NotificationResponse])
-def refresh_notifications(db: Session = Depends(get_db)):
-    """Run the notification sweep, then return all notifications."""
+def refresh_notifications(
+    db: Session = Depends(get_db),
+    limit: int = Query(NOTIF_DEFAULT_LIMIT, ge=1, le=NOTIF_MAX_LIMIT),
+    offset: int = Query(0, ge=0),
+):
+    """Run the notification sweep, prune old notifications, then return paginated list."""
     _sweep_notifications(db)
+    _prune_old_notifications(db)
     return (
         db.query(models.Notification)
+        .filter(models.Notification.dismissed_at.is_(None))
         .order_by(models.Notification.created_at.desc())
+        .offset(offset)
+        .limit(limit)
         .all()
     )
 
@@ -223,9 +266,9 @@ def mark_all_read(db: Session = Depends(get_db)):
 
 @router.delete("/{notification_id}", status_code=204)
 def delete_notification(notification_id: int, db: Session = Depends(get_db)):
-    """Delete a notification."""
+    """Dismiss a notification (tombstone — prevents resurrection by the sweep)."""
     notif = db.query(models.Notification).filter(models.Notification.id == notification_id).first()
     if not notif:
         raise HTTPException(status_code=404, detail="Notification not found")
-    db.delete(notif)
+    notif.dismissed_at = datetime.now(timezone.utc)
     db.commit()

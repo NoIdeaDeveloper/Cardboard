@@ -1,18 +1,23 @@
 import logging
 import os
-import uuid
-from datetime import date, timedelta
-from typing import List, Optional
+from datetime import date
+from typing import List
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
-from fastapi.responses import FileResponse, JSONResponse, Response
-from sqlalchemy import case, func
-from sqlalchemy.orm import Session
-
-from database import get_db
 import models
 import schemas
-from utils import get_player_or_404, safe_delete_file, safe_write_file, validate_file_extension, strip_image_metadata
+from database import get_db
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
+from fastapi.responses import FileResponse, JSONResponse
+from sqlalchemy import case, func
+from sqlalchemy.orm import Session
+from utils import (
+    get_player_or_404,
+    require_api_key,
+    safe_delete_file,
+    safe_write_file,
+    strip_image_metadata,
+    validate_file_extension,
+)
 
 logger = logging.getLogger("cardboard.players")
 router = APIRouter(prefix="/api/players", tags=["players"])
@@ -267,7 +272,7 @@ def get_player_rankings(db: Session = Depends(get_db)):
 @router.get("/{player_id}/rankings", response_model=List[schemas.PlayerRankingResponse])
 def get_player_game_rankings(player_id: int, db: Session = Depends(get_db)):
     """Return per-game rankings for a specific player."""
-    player = get_player_or_404(player_id, db)
+    get_player_or_404(player_id, db)  # raises 404 if player does not exist
 
     # Find all games this player has scored sessions for
     game_rows = (
@@ -364,7 +369,7 @@ def get_player_game_rankings(player_id: int, db: Session = Depends(get_db)):
 
 @router.get("/{player_id}/stats", response_model=schemas.PlayerStatsResponse)
 def get_player_stats(player_id: int, db: Session = Depends(get_db)):
-    player = get_player_or_404(player_id, db)
+    get_player_or_404(player_id, db)  # raises 404 if player does not exist
 
     session_count = (
         db.query(func.count())
@@ -634,8 +639,12 @@ def delete_player(player_id: int, db: Session = Depends(get_db)):
 # ── Admin / Maintenance ─────────────────────────────────────────────────────
 
 @router.post("/admin/recalculate-elo")
-def recalculate_all_elo(db: Session = Depends(get_db)):
-    """Recalculate Elo ratings for all players from scored session history."""
+def recalculate_all_elo(request: Request, db: Session = Depends(get_db)):
+    """Recalculate Elo ratings for all players from scored session history.
+
+    When CARDBOARD_API_KEY is set, an X-API-Key header is required.
+    """
+    require_api_key(request)
     import elo_db
     all_ids = {r.id for r in db.query(models.Player.id).all()}
     if not all_ids:

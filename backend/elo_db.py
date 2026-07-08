@@ -3,10 +3,10 @@ Database helpers for Elo rating updates.
 """
 
 from typing import Dict, List, Set
-from sqlalchemy.orm import Session
-from sqlalchemy import and_
+
 import models
-from elo import compute_elo_updates, batch_recalculate_elo
+from elo import batch_recalculate_elo, compute_elo_updates
+from sqlalchemy.orm import Session
 
 
 def _fetch_player_map(names: List[str], db: Session) -> Dict[str, int]:
@@ -184,7 +184,6 @@ def recalculate_elo_for_players(player_ids: Set[int], db: Session) -> None:
 
     # Reset the target players
     players = db.query(models.Player).filter(models.Player.id.in_(list(player_ids))).all()
-    player_map = {p.id: p for p in players}
     for p in players:
         p.elo_rating = 1500.0
         p.games_played = 0

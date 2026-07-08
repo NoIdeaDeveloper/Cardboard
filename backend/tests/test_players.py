@@ -1,7 +1,6 @@
 """Tests for the players CRUD endpoints."""
-import pytest
-
 import models
+import pytest
 
 
 def _make_game(client, name="Test Game"):

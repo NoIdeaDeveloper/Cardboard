@@ -11,7 +11,7 @@ def _seed_data(client, db):
     client.post(f"/api/games/{gid}/sessions", json={"played_at": "2024-01-01", "player_names": ["Alice"]})
     client.post("/api/share/tokens", params={"label": "test"})
     # Add a user setting
-    client.put("/api/settings/theme", json={"value": "dark"})
+    client.put("/api/settings/cardboard_theme", json={"value": "dark"})
     # Add a goal
     client.post("/api/goals/", json={"title": "Play 10 times", "type": "sessions_total", "target_value": 10})
     return gid
@@ -96,3 +96,34 @@ def test_wipe_idempotent(client, db):
     # Second wipe should also work
     r = client.request("DELETE", "/api/everything", json={"confirm": "DELETE EVERYTHING"})
     assert r.status_code == 200
+
+
+def test_wipe_refuses_system_path(client, db, monkeypatch):
+    """Wipe must refuse when DATA_DIR resolves to a filesystem root or system path."""
+    _seed_data(client, db)
+    monkeypatch.setenv("DATA_DIR", "/")
+    r = client.request("DELETE", "/api/everything", json={"confirm": "DELETE EVERYTHING"})
+    assert r.status_code == 500
+    assert "system path" in r.json()["detail"].lower()
+    # Data should still be there
+    assert db.query(models.Game).count() == 1
+
+
+def test_wipe_refuses_symlink_escape(client, db, monkeypatch, tmp_path):
+    """Wipe must refuse when a media subdir resolves outside DATA_DIR via symlink."""
+    _seed_data(client, db)
+    real_data = os.getenv("DATA_DIR")
+    # Point DATA_DIR at a temp dir whose "images" subdir is a symlink to /tmp.
+    fake_data = tmp_path / "fake_data"
+    fake_data.mkdir()
+    escape = tmp_path / "escape"
+    escape.mkdir()
+    (fake_data / "images").symlink_to(escape)
+    for other in ("instructions", "gallery", "avatars"):
+        (fake_data / other).mkdir()
+    monkeypatch.setenv("DATA_DIR", str(fake_data))
+    r = client.request("DELETE", "/api/everything", json={"confirm": "DELETE EVERYTHING"})
+    assert r.status_code == 500
+    assert "outside data_dir" in r.json()["detail"].lower()
+    # Original data should still be there
+    assert db.query(models.Game).count() == 1

@@ -2,12 +2,11 @@
 import logging
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
-
-from database import get_db
 import models
 import schemas
+from database import get_db
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
 from utils import get_game_or_404
 
 logger = logging.getLogger("cardboard.maintenance")

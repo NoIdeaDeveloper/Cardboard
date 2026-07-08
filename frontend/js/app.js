@@ -2012,23 +2012,32 @@ if ('serviceWorker' in navigator) {
       onNext: nextGame ? () => openGameModal(nextGame, 'view') : null,
     } : null;
 
-    const contentEl = buildModalContent(
+    const contentEl = buildModalContent({
       game, sessions,
-      handleSaveGame, handleDeleteGame,
-      handleAddSession, handleDeleteSession, handleUpdateSession,
-      handleUploadInstructions, handleDeleteInstructions,
-      handleUploadImage, handleDeleteImage,
+      onSave: handleSaveGame,
+      onDelete: handleDeleteGame,
+      onAddSession: handleAddSession,
+      onDeleteSession: handleDeleteSession,
+      onUpdateSession: handleUpdateSession,
+      onUploadInstructions: handleUploadInstructions,
+      onDeleteInstructions: handleDeleteInstructions,
+      onUploadImage: handleUploadImage,
+      onDeleteImage: handleDeleteImage,
       images,
-      handleUploadGalleryImage, handleDeleteGalleryImage, handleReorderGalleryImages,
-      handleAddGalleryImageFromUrl,
-      handleUpdateGalleryImageCaption,
-      effectiveMode, onSwitchToEdit, onSwitchToView,
-      state.games,
-      (targetGame) => openGameModal(targetGame, 'view', () => openGameModal(game, 'view', onBack)),
+      onUploadGalleryImage: handleUploadGalleryImage,
+      onDeleteGalleryImage: handleDeleteGalleryImage,
+      onReorderGalleryImages: handleReorderGalleryImages,
+      onAddGalleryImageFromUrl: handleAddGalleryImageFromUrl,
+      onUpdateGalleryImageCaption: handleUpdateGalleryImageCaption,
+      mode: effectiveMode,
+      onSwitchToEdit,
+      onSwitchToView,
+      allGames: state.games,
+      onOpenGame: (targetGame) => openGameModal(targetGame, 'view', () => openGameModal(game, 'view', onBack)),
       onShareGame,
-      () => { activeModal = null; closeModal(); },
+      onCloseModal: () => { activeModal = null; closeModal(); },
       navInfo,
-    );
+    });
 
     if (onBack) {
       const backBtn = document.createElement('button');
@@ -3619,9 +3628,6 @@ if ('serviceWorker' in navigator) {
                   publishers: data.publishers?.length ? JSON.stringify(data.publishers) : null,
                 };
                 const resp = await API.createGame(payload);
-                if (resp.image_url) {
-                  API.cacheGameImage(resp.id);
-                }
                 invalidateCollectionEtag();
                 await loadCollection();
                 showToast(`Added: ${escapeHtml(data.name)}`, 'success');

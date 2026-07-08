@@ -29,6 +29,26 @@ jobs:
       - name: Run tests
         run: pytest backend/tests -v
 
+  lint:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: backend/requirements*.txt
+
+      - name: Install ruff
+        run: pip install -r backend/requirements-dev.txt
+
+      - name: Run ruff
+        run: ruff check backend/
+
   frontend:
     runs-on: ubuntu-latest
 
@@ -47,3 +67,6 @@ jobs:
 
       - name: Run frontend tests
         run: npm test
+
+      - name: Build frontend
+        run: npm run build

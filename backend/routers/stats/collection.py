@@ -1,17 +1,15 @@
 """Collection breakdown stats endpoint (GET /api/collection/stats)."""
 import logging
 from datetime import date, timedelta
-from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from fastapi.responses import JSONResponse, Response
-from sqlalchemy import case, func
-from sqlalchemy.orm import Session
-
-from constants import NO_LOCATION_SENTINEL
-from database import get_db
 import models
 import schemas
+from constants import NO_LOCATION_SENTINEL
+from database import get_db
+from fastapi import APIRouter, Depends, Request
+from fastapi.responses import JSONResponse, Response
+from sqlalchemy import func
+from sqlalchemy.orm import Session
 from utils import collection_etag
 
 logger = logging.getLogger("cardboard.stats")

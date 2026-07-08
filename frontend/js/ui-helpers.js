@@ -117,14 +117,14 @@ function showConfirm(title, message) {
 // ===== Async Helper =====
 
 async function withLoading(btn, fn, loadingText) {
-  const orig = btn.textContent;
+  const orig = btn.innerHTML;
   btn.disabled = true;
-  if (loadingText) btn.textContent = loadingText;
+  if (loadingText) btn.innerHTML = loadingText;
   try {
     await fn();
   } finally {
     btn.disabled = false;
-    btn.textContent = orig;
+    btn.innerHTML = orig;
   }
 }
 

@@ -16,8 +16,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.environ.setdefault("DATABASE_URL", "sqlite:///./data/cardboard.db")
 os.environ.setdefault("DATA_DIR", "./data")
 
-from database import SessionLocal
 import models
+from database import SessionLocal
 from elo_db import recalculate_elo_for_players
 
 

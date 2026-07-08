@@ -1,6 +1,7 @@
 """Tests for the POST /api/games/suggest (game night) and GET similar-games endpoints."""
-import pytest
 from datetime import date, timedelta
+
+import pytest
 
 
 def _make_game(client, name, status="owned", **kwargs):

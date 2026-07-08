@@ -10,20 +10,19 @@ import json
 import logging
 import os
 import tempfile
-import urllib.request
 import threading as _threading
+import urllib.request
 from datetime import date as _date
 
-from fastapi import HTTPException
-from sqlalchemy import func
-from sqlalchemy.orm import Session
-
-from database import SessionLocal
 import models
 import schemas
-from utils import validate_url_safety, safe_image_ext, safe_delete_file, build_safe_opener, strip_image_metadata
 from constants import MAX_IMAGE_SIZE
+from database import SessionLocal
+from fastapi import HTTPException
 from PIL import Image
+from sqlalchemy import func
+from sqlalchemy.orm import Session
+from utils import build_safe_opener, safe_delete_file, safe_image_ext, strip_image_metadata, validate_url_safety
 
 logger = logging.getLogger("cardboard.games")
 

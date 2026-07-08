@@ -3,14 +3,14 @@ import logging
 import math
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import func
-from sqlalchemy.orm import Session
-
-from database import get_db
 import models
 import schemas
+from database import get_db
+from fastapi import APIRouter, Depends
+from sqlalchemy import func
+from sqlalchemy.orm import Session
 from utils import get_game_or_404
+
 from routers.games._common import _load_tags
 
 logger = logging.getLogger("cardboard.games")
@@ -259,12 +259,10 @@ def suggest_games(body: schemas.SuggestRequest, db: Session = Depends(get_db)):
 @router.post("/group-recommend", response_model=schemas.GroupRecommendResponse)
 def group_recommend(body: schemas.GroupRecommendRequest, db: Session = Depends(get_db)):
     """Recommend games for a specific group of players."""
-    from datetime import date, timedelta
-
     player_ids = body.player_ids
     player_count = len(player_ids)
+    from datetime import date
     today = date.today()
-    six_months_ago = today - timedelta(days=180)
 
     # Candidate games: owned, supports player count, not expansions
     query = db.query(models.Game).filter(

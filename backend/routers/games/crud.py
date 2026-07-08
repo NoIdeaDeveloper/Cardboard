@@ -6,32 +6,51 @@ import os
 import re
 from typing import List, Optional
 
+import models
+import schemas
+from constants import (
+    ALLOWED_IMAGE_EXTENSIONS,
+    ALLOWED_INSTRUCTIONS_EXTENSIONS,
+    MAX_IMAGE_SIZE,
+    MAX_INSTRUCTIONS_SIZE,
+    NO_LOCATION_SENTINEL,
+)
+from database import get_db
 from fastapi import (
-    APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, Request, UploadFile,
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    File,
+    HTTPException,
+    Query,
+    Request,
+    UploadFile,
 )
 from fastapi.responses import FileResponse, JSONResponse, Response
 from sqlalchemy import and_, asc, case, desc, exists, func, or_, text
 from sqlalchemy.orm import Session
-
-from database import get_db
-import models
-import schemas
 from utils import (
-    get_game_or_404, validate_file_extension, collection_etag,
-    safe_write_file, safe_delete_file, validate_image_content,
+    collection_etag,
+    get_game_or_404,
+    safe_delete_file,
+    safe_write_file,
     strip_image_metadata,
+    validate_file_extension,
+    validate_image_content,
 )
-from constants import (
-    MAX_IMAGE_SIZE, ALLOWED_IMAGE_EXTENSIONS,
-    MAX_INSTRUCTIONS_SIZE, ALLOWED_INSTRUCTIONS_EXTENSIONS,
-    NO_LOCATION_SENTINEL,
-)
+
 from routers.game_images import delete_all_gallery_images
 from routers.games._common import (
-    IMAGES_DIR, INSTRUCTIONS_DIR,
-    build_game_responses, _attach_parent_name, _load_tags, _save_tags,
-    _cache_game_image, _delete_cached_image, _safe_header_filename,
     _TAG_FIELD_NAMES,
+    IMAGES_DIR,
+    INSTRUCTIONS_DIR,
+    _attach_parent_name,
+    _cache_game_image,
+    _delete_cached_image,
+    _load_tags,
+    _safe_header_filename,
+    _save_tags,
+    build_game_responses,
 )
 
 logger = logging.getLogger("cardboard.games")
@@ -573,7 +592,7 @@ async def upload_image(game_id: int, file: UploadFile = File(...), db: Session =
     safe_name = _safe_filename(file.filename or "image.jpg")
     ext = validate_file_extension(safe_name, ALLOWED_IMAGE_EXTENSIONS, "Only image files (.jpg, .png, .gif, .webp) are allowed")
 
-    content = await file.read()
+    content = await file.read(MAX_IMAGE_SIZE + 1)
     if len(content) > MAX_IMAGE_SIZE:
         raise HTTPException(status_code=413, detail="File exceeds 10 MB limit")
 

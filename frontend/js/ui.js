@@ -286,7 +286,34 @@ function buildGameListItem(game) {
 
 // ===== Modal =====
 
-function buildModalContent(game, sessions, onSave, onDelete, onAddSession, onDeleteSession, onUpdateSession, onUploadInstructions, onDeleteInstructions, onUploadImage, onDeleteImage, images, onUploadGalleryImage, onDeleteGalleryImage, onReorderGalleryImages, onAddGalleryImageFromUrl, onUpdateGalleryImageCaption, mode = 'view', onSwitchToEdit, onSwitchToView, allGames = [], onOpenGame = null, onShareGame = null, onCloseModal = closeModal, navInfo = null) {
+function buildModalContent(opts) {
+  const {
+    game,
+    sessions = [],
+    onSave,
+    onDelete,
+    onAddSession,
+    onDeleteSession,
+    onUpdateSession,
+    onUploadInstructions,
+    onDeleteInstructions,
+    onUploadImage,
+    onDeleteImage,
+    images = [],
+    onUploadGalleryImage,
+    onDeleteGalleryImage,
+    onReorderGalleryImages,
+    onAddGalleryImageFromUrl,
+    onUpdateGalleryImageCaption,
+    mode = 'view',
+    onSwitchToEdit,
+    onSwitchToView,
+    allGames = [],
+    onOpenGame = null,
+    onShareGame = null,
+    onCloseModal = closeModal,
+    navInfo = null,
+  } = opts;
   const el = document.createElement('div');
 
   const categories = parseList(game.categories);
@@ -2323,6 +2350,9 @@ function buildMilestonesSection(milestones, onGameClick, onClear) {
 }
 
 function _ownedFor(dateAdded) {
+  // Canonical tested version: frontend/js/app/format.js ownedFor.
+  // This is a near-duplicate kept because ui.js is a classic global script
+  // and can't import the ES module. Keep in sync if you change the format.
   const now = new Date();
   const added = new Date(dateAdded);
   let months = (now.getFullYear() - added.getFullYear()) * 12 + (now.getMonth() - added.getMonth());

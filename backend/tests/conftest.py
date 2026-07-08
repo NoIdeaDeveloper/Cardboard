@@ -25,12 +25,12 @@ os.environ.setdefault("FRONTEND_PATH", "")     # skip frontend static mount
 os.environ.setdefault("LOG_LEVEL", "WARNING")  # quiet during tests
 
 import pytest
-from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, event, StaticPool, text as sa_text
-from sqlalchemy.orm import sessionmaker
-
 from database import Base, get_db
+from fastapi.testclient import TestClient
 from main import app
+from sqlalchemy import StaticPool, create_engine, event
+from sqlalchemy import text as sa_text
+from sqlalchemy.orm import sessionmaker
 
 # Single shared in-memory engine for the whole test session.
 # StaticPool ensures all connections share the same in-memory database.

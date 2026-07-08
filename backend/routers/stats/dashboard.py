@@ -4,17 +4,14 @@ import logging
 import threading
 import time
 from datetime import date, timedelta
-from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from fastapi.responses import JSONResponse, Response
-from sqlalchemy import and_, case, func, or_
-from sqlalchemy.orm import Session
-
-from constants import NO_LOCATION_SENTINEL
-from database import get_db
 import models
 import schemas
+from database import get_db
+from fastapi import APIRouter, Depends, Request
+from fastapi.responses import Response
+from sqlalchemy import and_, case, func, or_
+from sqlalchemy.orm import Session
 from utils import collection_etag
 
 logger = logging.getLogger("cardboard.stats")
@@ -218,7 +215,6 @@ def get_stats(request: Request, db: Session = Depends(get_db)):
         .group_by(models.PlaySession.game_id)
         .all()
     )
-    session_counts = {str(gid): count for gid, count in session_counts_rows}
 
     # ── H-index and play frequency buckets ─────────────────────────────────
     # H-index: largest h such that h games have been played h times each

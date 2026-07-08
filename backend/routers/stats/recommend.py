@@ -1,18 +1,14 @@
 """Play-this-next recommendation endpoint (GET /api/recommend)."""
 import logging
-from datetime import date, timedelta
+from datetime import date
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from fastapi.responses import JSONResponse, Response
-from sqlalchemy import case, func
-from sqlalchemy.orm import Session
-
-from constants import NO_LOCATION_SENTINEL
-from database import get_db
 import models
 import schemas
-from utils import collection_etag
+from database import get_db
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import func
+from sqlalchemy.orm import Session
 
 logger = logging.getLogger("cardboard.stats")
 router = APIRouter(prefix="/api", tags=["stats"])

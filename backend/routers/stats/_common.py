@@ -2,11 +2,10 @@
 import logging
 from datetime import date, timedelta
 
-from sqlalchemy import func
-from sqlalchemy.orm import Session
-
 import models
 import schemas
+from sqlalchemy import func
+from sqlalchemy.orm import Session
 
 logger = logging.getLogger("cardboard.stats")
 

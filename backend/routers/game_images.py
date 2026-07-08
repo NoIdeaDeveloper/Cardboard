@@ -5,15 +5,24 @@ import urllib.request
 import uuid
 from typing import List
 
+import models
+import schemas
+from constants import ALLOWED_IMAGE_EXTENSIONS, MAX_IMAGE_SIZE
+from database import get_db
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
-
-from database import get_db
-import models
-import schemas
-from utils import validate_url_safety, safe_image_ext, get_game_or_404, validate_file_extension, safe_write_file, safe_delete_file, build_safe_opener, validate_image_content, strip_image_metadata
-from constants import MAX_IMAGE_SIZE, ALLOWED_IMAGE_EXTENSIONS
+from utils import (
+    build_safe_opener,
+    get_game_or_404,
+    safe_delete_file,
+    safe_image_ext,
+    safe_write_file,
+    strip_image_metadata,
+    validate_file_extension,
+    validate_image_content,
+    validate_url_safety,
+)
 
 logger = logging.getLogger("cardboard.gallery")
 router = APIRouter(prefix="/api/games", tags=["gallery"])
@@ -75,7 +84,7 @@ _safe_gallery_ext = safe_image_ext  # backward-compatible alias
 
 @router.get("/{game_id}/images", response_model=List[schemas.GameImageResponse])
 def get_images(game_id: int, db: Session = Depends(get_db)):
-    game = get_game_or_404(game_id, db)
+    get_game_or_404(game_id, db)  # raises 404 if game does not exist
     return (
         db.query(models.GameImage)
         .filter(models.GameImage.game_id == game_id)
@@ -94,7 +103,7 @@ async def upload_gallery_image(
         file.filename or "", ALLOWED_IMAGE_EXTENSIONS, "Only image files (.jpg, .png, .gif, .webp) are allowed"
     )
 
-    content = await file.read()
+    content = await file.read(MAX_IMAGE_SIZE + 1)
     if len(content) > MAX_IMAGE_SIZE:
         raise HTTPException(status_code=413, detail="File exceeds 10 MB limit")
 
@@ -148,7 +157,16 @@ def get_gallery_image_file(game_id: int, img_id: int, db: Session = Depends(get_
         raise HTTPException(status_code=404, detail="Image file not found")
     if not os.path.isfile(real):
         raise HTTPException(status_code=404, detail="Image file not found")
-    return FileResponse(real)
+    ext = os.path.splitext(img.filename)[1].lower()
+    media_type = {
+        ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+        ".png": "image/png", ".webp": "image/webp", ".gif": "image/gif",
+    }.get(ext)
+    return FileResponse(
+        real,
+        media_type=media_type,
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
 
 
 @router.delete("/{game_id}/images/{img_id}", status_code=204)
@@ -194,7 +212,7 @@ def delete_gallery_image(game_id: int, img_id: int, db: Session = Depends(get_db
     real_file_path = os.path.realpath(file_path)
     gallery_dir = os.path.realpath(_game_gallery_dir(game_id))
     try:
-        if real_file_path.startswith(gallery_dir + os.sep):
+        if os.path.commonpath([gallery_dir, real_file_path]) == gallery_dir:
             os.remove(real_file_path)
         else:
             logger.warning(

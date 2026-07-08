@@ -12,17 +12,18 @@ import socket
 import urllib.error
 import urllib.parse
 import urllib.request
-from typing import TYPE_CHECKING, List, Tuple, Optional, Set
+from typing import TYPE_CHECKING, List, Optional, Set, Tuple
 
-from fastapi import HTTPException
-from sqlalchemy import func
-from sqlalchemy.orm import Session
 from constants import ALLOWED_IMAGE_EXTENSIONS
+from fastapi import HTTPException
 
 # Mitigate Pillow decompression-bomb DoS: a 10 MB compressed PNG can decode to
 # ~89 MP (~268 MB RAM) at Pillow's default ceiling. 8 MP is generous for board-
 # game cover art while capping memory exposure per image.
 from PIL import Image as _PILImage
+from sqlalchemy import func
+from sqlalchemy.orm import Session
+
 _PILImage.MAX_IMAGE_PIXELS = 8_000_000
 
 logger = logging.getLogger("cardboard.utils")
@@ -36,6 +37,35 @@ if TYPE_CHECKING:
 _TRUSTED_PROXIES: frozenset[str] = frozenset(
     s.strip() for s in os.getenv("TRUSTED_PROXIES", "").split(",") if s.strip()
 )
+
+
+# Optional API key gating for destructive endpoints. When CARDBOARD_API_KEY is
+# set (non-empty), destructive endpoints require an X-API-Key header that
+# matches (constant-time). When unset, the app behaves as before (no auth) —
+# preserving the single-user localhost experience. The stored key is hashed
+# with SHA-256 so the plaintext never sits in module state longer than needed.
+import secrets as _secrets
+
+_API_KEY_ENV = os.getenv("CARDBOARD_API_KEY", "").strip()
+_API_KEY_HASH: str | None = None
+if _API_KEY_ENV:
+    _API_KEY_HASH = hashlib.sha256(_API_KEY_ENV.encode("utf-8")).hexdigest()
+    _API_KEY_ENV = ""  # drop plaintext reference
+    logger.info("CARDBOARD_API_KEY set — destructive endpoints require X-API-Key header")
+
+
+def require_api_key(request) -> None:
+    """Enforce X-API-Key on destructive endpoints when CARDBOARD_API_KEY is set.
+
+    Raises HTTPException(401) if the key is configured but missing/wrong; no-op
+    when unconfigured (preserves the single-user localhost experience).
+    """
+    if _API_KEY_HASH is None:
+        return  # auth disabled
+    provided = request.headers.get("X-API-Key", "") if hasattr(request, "headers") else ""
+    provided_hash = hashlib.sha256(provided.encode("utf-8")).hexdigest() if provided else ""
+    if not provided or not _secrets.compare_digest(provided_hash, _API_KEY_HASH):
+        raise HTTPException(status_code=401, detail="Valid X-API-Key required for this operation")
 
 
 def get_client_ip(request) -> str:

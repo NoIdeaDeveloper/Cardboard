@@ -11,18 +11,19 @@ import re
 import sqlite3
 import tempfile
 import zipfile
-from datetime import date as _date, datetime, timezone
+from datetime import date as _date
+from datetime import datetime, timezone
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, UploadFile
-from fastapi.responses import FileResponse, Response
-from sqlalchemy.orm import Session
-
-from database import get_db, engine
 import models
 import schemas
-from utils import safe_delete_file, validate_file_extension
 from constants import FRONTEND_PATH
-from routers.games._common import IMAGES_DIR, build_game_responses, _safe_header_filename
+from database import engine, get_db
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, Request, UploadFile
+from fastapi.responses import FileResponse, Response
+from sqlalchemy.orm import Session
+from utils import require_api_key, safe_delete_file, validate_file_extension
+
+from routers.games._common import IMAGES_DIR, _safe_header_filename, build_game_responses
 
 logger = logging.getLogger("cardboard.games")
 router = APIRouter(prefix="/api/games", tags=["games"])
@@ -290,14 +291,24 @@ def export_pdf(db: Session = Depends(get_db)):
     difficulty, playtime, and player count for each game.
     Only games with share_hidden=False are included.
     """
-    from html import escape as _html_escape, unescape as _html_unescape
-    from reportlab.lib.pagesizes import letter
-    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-    from reportlab.lib.units import inch
+    from html import escape as _html_escape
+    from html import unescape as _html_unescape
+
     from reportlab.lib import colors
+    from reportlab.lib.pagesizes import letter
+    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+    from reportlab.lib.units import inch
     from reportlab.platypus import (
-        SimpleDocTemplate, Paragraph, Spacer, Image as RLImage,
-        Table, TableStyle, HRFlowable, KeepTogether,
+        HRFlowable,
+        KeepTogether,
+        Paragraph,
+        SimpleDocTemplate,
+        Spacer,
+        Table,
+        TableStyle,
+    )
+    from reportlab.platypus import (
+        Image as RLImage,
     )
 
     def _safe(text: str) -> str:
@@ -321,7 +332,6 @@ def export_pdf(db: Session = Depends(get_db)):
     # Brand colours — warm palette matching the web app
     C_HEADING = colors.HexColor("#2b1d0e")
     C_SUB     = colors.HexColor("#8a7055")
-    C_ACCENT  = colors.HexColor("#c9a84c")
     C_TITLE   = colors.HexColor("#2b1d0e")
     C_META    = colors.HexColor("#5c4535")
     C_DESC    = colors.HexColor("#3c2e22")
@@ -596,27 +606,34 @@ def export_images(background_tasks: BackgroundTasks, db: Session = Depends(get_d
     ts = _date.today().strftime("%Y-%m-%d")
     filename = f"cardboard-images-{ts}.zip"
     tmp = tempfile.NamedTemporaryFile(suffix=".zip", delete=False)
-    with zipfile.ZipFile(tmp.name, "w", zipfile.ZIP_DEFLATED) as zf:
-        for game in games:
-            url = game.image_url
-            if not url or url.startswith("http"):
-                continue
-            if url.startswith("/api/"):
-                # Cached image — look in IMAGES_DIR by game ID
-                if game.image_cached and game.image_ext:
-                    path = os.path.join(IMAGES_DIR, f"{game.id}{game.image_ext}")
-                    if os.path.isfile(path):
+    tmp.close()
+    _temp_backup_files.add(tmp.name)
+    try:
+        with zipfile.ZipFile(tmp.name, "w", zipfile.ZIP_DEFLATED) as zf:
+            for game in games:
+                url = game.image_url
+                if not url or url.startswith("http"):
+                    continue
+                if url.startswith("/api/"):
+                    # Cached image — look in IMAGES_DIR by game ID
+                    if game.image_cached and game.image_ext:
+                        path = os.path.join(IMAGES_DIR, f"{game.id}{game.image_ext}")
+                        if os.path.isfile(path):
+                            arcname = f"game-{game.id}-{os.path.basename(path)}"
+                            zf.write(path, arcname)
+                else:
+                    # Legacy path-based image — validate stays within FRONTEND_PATH
+                    base = os.path.realpath(FRONTEND_PATH or ".")
+                    path = os.path.realpath(os.path.join(base, url.lstrip("/")))
+                    if os.path.commonpath([base, path]) == base and os.path.isfile(path):
                         arcname = f"game-{game.id}-{os.path.basename(path)}"
                         zf.write(path, arcname)
-            else:
-                # Legacy path-based image — validate stays within FRONTEND_PATH
-                base = os.path.realpath(FRONTEND_PATH or ".")
-                path = os.path.realpath(os.path.join(base, url.lstrip("/")))
-                if path.startswith(base + os.sep) and os.path.isfile(path):
-                    arcname = f"game-{game.id}-{os.path.basename(path)}"
-                    zf.write(path, arcname)
-    tmp.close()
+    except Exception:
+        safe_delete_file(tmp.name)
+        _temp_backup_files.discard(tmp.name)
+        raise
     background_tasks.add_task(os.remove, tmp.name)
+    background_tasks.add_task(_temp_backup_files.discard, tmp.name)
     return FileResponse(
         tmp.name,
         media_type="application/zip",
@@ -723,13 +740,15 @@ def _extract_and_validate_db(zf: zipfile.ZipFile, tmp_zip_name: str, db_suffix: 
     return conn, db_tmp
 
 @router.post("/restore", status_code=200)
-async def restore_backup(file: UploadFile = File(...)):
+async def restore_backup(request: Request, file: UploadFile = File(...)):
     """
     Restore from a ZIP backup created by GET /api/games/backup.
     The ZIP must contain a `cardboard.db` file.  Media files
     (images/, gallery/, instructions/) are also restored if present.
     The server restarts the database connection after the restore.
+    When CARDBOARD_API_KEY is set, an X-API-Key header is required.
     """
+    require_api_key(request)
     data_dir = os.getenv("DATA_DIR", "/app/data")
     db_url = os.getenv("DATABASE_URL", "sqlite:///./data/cardboard.db")
     db_path = db_url.replace("sqlite+aiosqlite:///", "").replace("sqlite:///", "")

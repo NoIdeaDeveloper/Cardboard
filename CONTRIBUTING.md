@@ -14,12 +14,14 @@ alembic upgrade head
 uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-The frontend is plain HTML/CSS/JS in `frontend/` — edit files and refresh the browser. No build step. API docs at `http://localhost:8000/api/docs`.
+The frontend is plain HTML/CSS/JS in `frontend/` — edit files and refresh the browser for the dev server (it serves `frontend/` directly). For production-style testing, build the bundle with `npm install && npm run build`. Set `ENABLE_DOCS=true` to expose API docs at `http://localhost:8000/api/docs`.
 
 ## Running tests
 
 ```bash
-pytest backend/tests -v
+pytest backend/tests -v   # backend
+npm test                  # frontend (vitest)
+ruff check backend/       # lint
 ```
 
 ## Submitting changes

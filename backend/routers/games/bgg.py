@@ -3,28 +3,30 @@
 Includes the per-IP token-bucket rate limiter shared by the BGG-facing GET
 endpoints.
 """
+import collections as _collections
 import json
 import logging
 import ssl
+import threading as _threading
 import time
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
-import threading as _threading
-import collections as _collections
 from typing import Optional
 
 import certifi
 import defusedxml.ElementTree as DefusedET
+import schemas
+from database import get_db
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
+from utils import build_safe_opener, get_client_ip, get_game_or_404, sanitize_html_to_text
 
-from database import get_db
-import models
-import schemas
-from utils import get_game_or_404, build_safe_opener, sanitize_html_to_text, get_client_ip
 from routers.games._common import (
-    _save_tags, _load_tags, _cache_game_image, _attach_parent_name,
+    _attach_parent_name,
+    _cache_game_image,
+    _load_tags,
+    _save_tags,
 )
 
 logger = logging.getLogger("cardboard.games")

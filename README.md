@@ -112,6 +112,7 @@ Set via environment variables (or `.env` for Docker):
 | `LOG_LEVEL` | `INFO` | Python log level |
 | `ENABLE_DOCS` | `false` | Set to `true` to enable interactive API docs at `/api/docs` |
 | `TRUSTED_PROXIES` | *(none)* | Comma-separated reverse-proxy IPs (e.g. `10.0.0.1,172.16.0.1`). When set, `X-Forwarded-For` is trusted from these peers so the BGG rate limiter buckets per real client. Without this, all requests behind a proxy share one bucket |
+| `CARDBOARD_API_KEY` | *(none)* | When set, destructive endpoints (`DELETE /api/everything`, `POST /api/games/restore`, `POST /api/players/admin/recalculate-elo`) require an `X-API-Key` header matching this value. Leave unset for the default no-auth single-user mode. Store the same key in your browser via the Settings panel to send it automatically |
 | `WANT_TO_PLAY_RETENTION_DAYS` | `90` | How long to retain visitor "Want to Play" submissions before auto-deletion. Set to `0` to keep forever |
 | `DATABASE_URL` | `sqlite:///./data/cardboard.db` | SQLAlchemy connection string — only needed if using PostgreSQL or a custom path |
 | `FRONTEND_PATH` | `/app/frontend` | Path to the frontend assets — only needed if running the backend outside of Docker |
@@ -146,11 +147,27 @@ This clears every table and empties `images/`, `gallery/`, `instructions/`, and 
 ## Development
 
 ```bash
-cd backend && pip install -r requirements.txt
+cd backend && pip install -r requirements.txt -r requirements-dev.txt
+alembic upgrade head
 uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-Frontend is plain HTML/CSS/JS in `frontend/` — edit and refresh, no build step. API docs at `/api/docs`.
+For the frontend, install Node deps and (for production-style testing) build the bundle:
+
+```bash
+npm install
+npm run build      # esbuild: hashes + minifies into frontend/dist/
+```
+
+For day-to-day dev the frontend is plain HTML/CSS/JS in `frontend/` — edit files and refresh the browser; no rebuild needed for the dev server (it serves `frontend/` directly). Set `ENABLE_DOCS=true` to expose API docs at `/api/docs`.
+
+Run tests:
+
+```bash
+pytest backend/tests -v   # backend
+npm test                  # frontend (vitest)
+ruff check backend/       # lint
+```
 
 ## Tech Stack
 

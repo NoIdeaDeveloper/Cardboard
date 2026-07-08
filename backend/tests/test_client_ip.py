@@ -1,6 +1,5 @@
 """Tests for the get_client_ip helper and trusted-proxy X-Forwarded-For handling."""
 import pytest
-
 import utils
 
 

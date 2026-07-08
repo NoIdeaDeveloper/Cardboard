@@ -11,15 +11,13 @@ import sqlite3
 import tempfile
 import zipfile
 
+import models
 import pytest
+from database import Base, get_db
 from fastapi.testclient import TestClient
+from main import app
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-
-import models
-from database import Base, get_db
-from main import app
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -492,6 +490,7 @@ def test_restore_accepts_valid_schema(backup_client):
 # ---------------------------------------------------------------------------
 
 import csv as _csv
+
 
 def _seed_game_with_private_fields(db_session):
     """Seed a game with all private fields populated."""

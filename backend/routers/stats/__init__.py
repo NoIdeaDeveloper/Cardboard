@@ -6,7 +6,7 @@ include order is not significant for path matching.
 """
 from fastapi import APIRouter
 
-from routers.stats import dashboard, collection, recommend, trade_sell
+from routers.stats import collection, dashboard, recommend, trade_sell
 
 router = APIRouter()
 router.include_router(dashboard.router)

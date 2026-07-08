@@ -1,0 +1,21 @@
+[tool.pytest.ini_options]
+testpaths = ["backend/tests"]
+filterwarnings = [
+  "ignore::DeprecationWarning",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+extend-exclude = ["backend/alembic/versions"]
+
+[tool.ruff.lint]
+# Start conservative: Pyflakes (F) + pycodestyle errors (E9) + unused imports (F401).
+# Widen once the codebase is clean.
+select = ["E9", "F", "I"]
+# Allow unused imports in __init__.py files (re-exports) and conftest.py (fixtures).
+ignore = ["E501"]  # line length handled by formatter, not enforced
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]
+"backend/tests/*" = ["F401", "F841"]  # test files: imports for fixtures, named-but-unused IDs aid readability

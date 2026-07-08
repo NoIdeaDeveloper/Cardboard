@@ -1,9 +1,9 @@
 """Tests for image upload, gallery, and reorder endpoints."""
 import io
 import os
-import pytest
 
-from PIL import Image, ExifTags
+import pytest
+from PIL import ExifTags, Image
 
 # Minimal valid JPEG (1x1 pixel, white)
 _TINY_JPEG = (
@@ -110,6 +110,13 @@ def test_gallery_upload(client):
     # first gallery image becomes primary image_url
     game = client.get(f"/api/games/{gid}").json()
     assert game["image_url"] is not None
+
+
+def test_gallery_upload_too_large(client):
+    gid = _make_game(client)
+    big_content = b"\xff\xd8\xff" + b"\x00" * (10 * 1024 * 1024 + 1)
+    r = _upload_gallery(client, gid, content=big_content)
+    assert r.status_code == 413
 
 
 def test_gallery_upload_wrong_extension(client):
@@ -230,6 +237,17 @@ def test_gallery_upload_strips_exif(client):
     assert r.status_code == 200
     stored = Image.open(io.BytesIO(r.content))
     assert not stored.getexif(), "stored gallery image should have no EXIF"
+
+
+def test_gallery_file_has_cache_control_header(client):
+    """Gallery image file responses should be cacheable (Cache-Control header)."""
+    gid = _make_game(client)
+    r = _upload_gallery(client, gid, content=_TINY_JPEG, filename="photo.jpg")
+    img_id = r.json()["id"]
+    r = client.get(f"/api/games/{gid}/images/{img_id}/file")
+    assert r.status_code == 200
+    cc = r.headers.get("Cache-Control", "")
+    assert "max-age=" in cc, f"expected Cache-Control with max-age, got {cc!r}"
 
 
 def test_cover_upload_strips_exif(client):

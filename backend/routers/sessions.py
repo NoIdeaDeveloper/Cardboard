@@ -2,15 +2,14 @@ import logging
 from datetime import datetime, timezone
 from typing import List, Optional
 
+import elo_db
+import models
+import schemas
+from database import get_db
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import desc, func
 from sqlalchemy.orm import Session
-
-from database import get_db
-import models
-import schemas
 from utils import get_game_or_404, get_session_or_404
-import elo_db
 
 logger = logging.getLogger("cardboard.sessions")
 router = APIRouter(tags=["sessions"])

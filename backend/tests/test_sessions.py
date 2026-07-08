@@ -1,6 +1,7 @@
 """Tests for play session CRUD and last_played syncing."""
-import pytest
 from datetime import date
+
+import pytest
 
 
 def _make_game(client, name="Test Game"):

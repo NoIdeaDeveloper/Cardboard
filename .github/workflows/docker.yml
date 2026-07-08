@@ -2,6 +2,8 @@ name: Build and publish Docker image
 
 on:
   push:
+    branches: ["main"]
+    tags: ["v*"]
   workflow_dispatch:
 
 env:
@@ -35,6 +37,7 @@ jobs:
             type=sha,prefix=,format=short
             type=raw,value=latest,enable={{is_default_branch}}
             type=ref,event=branch
+            type=semver,pattern={{version}}
 
       - name: Set up Python
         uses: actions/setup-python@v5

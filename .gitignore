@@ -37,3 +37,7 @@ data/
 .vscode/
 .idea/
 *.swp
+
+# AI assistant local config (machine-specific paths/permissions)
+.claude/settings.local.json
+.cursor/

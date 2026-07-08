@@ -6,7 +6,6 @@ is automatically marked is_complete=True with a completed_at timestamp.
 """
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

@@ -1,8 +1,8 @@
 """Tests for CSV and BGG XML import endpoints."""
 import io
 import json
-import pytest
 
+import pytest
 
 # ---------------------------------------------------------------------------
 # CSV import helpers

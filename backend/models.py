@@ -1,7 +1,8 @@
 from datetime import datetime, timezone
-from sqlalchemy import Column, Index, Integer, String, Float, Text, Date, DateTime, Boolean, ForeignKey
-from sqlalchemy.orm import relationship
+
 from database import Base
+from sqlalchemy import Boolean, Column, Date, DateTime, Float, ForeignKey, Index, Integer, String, Text
+from sqlalchemy.orm import relationship
 
 
 class Game(Base):
@@ -120,6 +121,10 @@ class EloHistory(Base):
     elo_after = Column(Float, nullable=False)
     games_played_after = Column(Integer, nullable=False)
 
+    __table_args__ = (
+        Index("ix_elo_history_player_session", "player_id", "session_id"),
+    )
+
 
 class ShareToken(Base):
     __tablename__ = "share_tokens"
@@ -232,6 +237,7 @@ class Notification(Base):
     action_url = Column(String(500), nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
     read_at = Column(DateTime, nullable=True)
+    dismissed_at = Column(DateTime, nullable=True)  # set when user dismisses; sweep skips dismissed dedup_keys
     # Dedup key: one notification per kind+action_url (prevents duplicates on refresh)
     dedup_key = Column(String(500), nullable=True, index=True)
 

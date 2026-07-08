@@ -1,6 +1,7 @@
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator, model_validator
-from typing import Annotated, Optional, List, Dict
 from datetime import date, datetime
+from typing import Annotated, Dict, List, Optional
+
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator, model_validator
 
 
 def _strip_name(v):
@@ -780,5 +781,6 @@ class NotificationResponse(BaseModel):
     action_url: Optional[str] = None
     created_at: Optional[datetime] = None
     read_at: Optional[datetime] = None
+    dismissed_at: Optional[datetime] = None
 
     model_config = ConfigDict(from_attributes=True)

@@ -1,22 +1,22 @@
+import collections as _collections
 import hashlib
 import logging
 import os
 import secrets
 import threading as _threading
-import collections as _collections
 import time
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request
-from sqlalchemy.orm import Session
-
-from database import get_db
 import models
 import schemas
+from database import get_db
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from sqlalchemy import func
-from routers.games import _heat_level, _load_tags, _attach_parent_name, build_game_responses
-from utils import get_game_or_404, get_client_ip
+from sqlalchemy.orm import Session
+from utils import get_client_ip, get_game_or_404
+
+from routers.games import _attach_parent_name, _load_tags, build_game_responses
 
 logger = logging.getLogger("cardboard.sharing")
 router = APIRouter(prefix="/api/share", tags=["sharing"])

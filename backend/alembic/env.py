@@ -8,8 +8,8 @@ from sqlalchemy import engine_from_config, pool
 # backend/ directory (e.g. `cd backend && alembic upgrade head`).
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from database import Base
 import models  # noqa: F401 — registers all ORM models with Base.metadata
+from database import Base
 
 config = context.config
 
