@@ -1,6 +1,6 @@
 # Development/test dependencies
 # Note: Install in the same environment where production deps are already installed,
 # or inside the Docker container where requirements.txt deps are present.
-pytest==9.0.3
-httpx==0.27.2
-ruff==0.13.0
+pytest==9.1.1
+httpx==0.28.1
+ruff==0.15.21
