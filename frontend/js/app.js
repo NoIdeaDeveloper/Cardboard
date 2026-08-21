@@ -1500,7 +1500,7 @@ if ('serviceWorker' in navigator) {
         chips.push({ type: 'location', label: _locationLabel(state.filterLocation), value: state.filterLocation });
       }
       chipsEl.innerHTML = chips.map(chip => `
-        <span class="filter-chip" data-type="${chip.type}" data-value="${chip.value || ''}">
+        <span class="filter-chip" data-type="${chip.type}" data-value="${escapeHtml(chip.value || '')}">
           ${escapeHtml(chip.label)}
           <button class="chip-remove" aria-label="Remove ${escapeHtml(chip.label)} filter" title="Remove filter">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="10" height="10"><path d="M18 6L6 18M6 6l12 12"/></svg>
