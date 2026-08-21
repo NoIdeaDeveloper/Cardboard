@@ -4360,8 +4360,8 @@ img.ql-chip-avatar { display: block; object-fit: cover; }
   transition: border-color var(--transition), transform var(--transition), box-shadow var(--transition);
 }
 .stat-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 20px var(--accent-glow);
+  transform: var(--hover-lift);
+  box-shadow: var(--shadow-1);
   border-color: var(--border-hover);
 }
 
@@ -4381,14 +4381,10 @@ img.ql-chip-avatar { display: block; object-fit: cover; }
   letter-spacing: 0.05em;
 }
 
-.stat-card[data-drilldown] {
-  cursor: pointer;
-  transition: border-color var(--transition), transform var(--transition), box-shadow var(--transition);
-}
+.stat-card[data-drilldown] { cursor: pointer; }
 .stat-card[data-drilldown]:hover {
-  border-color: var(--border-hover);
-  transform: translateY(-2px);
-  box-shadow: var(--shadow);
+  border-color: var(--accent);
+  box-shadow: 0 6px 20px var(--accent-glow);
 }
 
 .stat-bar-row[data-drilldown] { cursor: pointer; }
@@ -4447,7 +4443,7 @@ img.ql-chip-avatar { display: block; object-fit: cover; }
   padding: 0;
   list-style: none;
   position: sticky;
-  top: 56px;
+  top: 60px;
   z-index: var(--z-header);
   background: var(--bg-glass);
   backdrop-filter: blur(8px);
@@ -4460,7 +4456,8 @@ img.ql-chip-avatar { display: block; object-fit: cover; }
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 5px 12px;
+  padding: 0 14px;
+  height: 32px;
   border-radius: var(--radius-pill);
   background: var(--bg-3);
   border: 1px solid var(--border);
@@ -4468,7 +4465,7 @@ img.ql-chip-avatar { display: block; object-fit: cover; }
   font-size: var(--text-sm);
   font-weight: 600;
   cursor: pointer;
-  transition: background var(--transition), color var(--transition), border-color var(--transition);
+  transition: background var(--transition), color var(--transition), border-color var(--transition), transform var(--transition);
   text-decoration: none;
   user-select: none;
 }
@@ -4478,6 +4475,9 @@ img.ql-chip-avatar { display: block; object-fit: cover; }
   color: var(--text);
   border-color: var(--border-hover);
 }
+
+.stats-jump-chip:focus-visible { box-shadow: var(--focus-ring); outline: none; }
+.stats-jump-chip:active { transform: scale(var(--press-scale)); }
 
 .stats-jump-chip.active {
   background: var(--accent);
@@ -4504,7 +4504,8 @@ img.ql-chip-avatar { display: block; object-fit: cover; }
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   padding: 20px 24px;
-  transition: opacity 0.2s ease, border-color 0.2s ease;
+  box-shadow: var(--shadow-1);
+  transition: opacity 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
   position: relative;
 }
 .stats-section[data-has-handle] .stats-section-title {
