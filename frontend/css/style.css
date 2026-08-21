@@ -2327,15 +2327,41 @@ button.footer-link {
 
 .form-group label {
   font-size: var(--text-sm);
-  font-weight: 500;
+  font-weight: 600;
   color: var(--text-2);
   text-transform: uppercase;
   letter-spacing: 0.05em;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+/* Accent tick that ties form labels to the section-label language */
+.form-group label::before {
+  content: '';
+  width: 3px;
+  height: 11px;
+  border-radius: var(--radius-xs);
+  background: var(--accent);
+  opacity: 0.55;
+  flex-shrink: 0;
+}
+
+/* Checkbox/toggle rows and hint text opt out of the tick + uppercase styling */
+.form-group label.inline-toggle::before,
+.form-group label:has(input[type="checkbox"])::before { display: none; }
+.form-group label.inline-toggle,
+.form-group label:has(input[type="checkbox"]) {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 500;
 }
 
 .form-group input:focus,
 .form-group textarea:focus,
 .form-input:focus { border-color: var(--accent); box-shadow: var(--focus-ring); outline: none; }
+
+.form-group select:focus-visible { box-shadow: var(--focus-ring); outline: none; }
 
 .form-group input.invalid,
 .form-group textarea.invalid,
@@ -4297,7 +4323,7 @@ img.ql-chip-avatar { display: block; object-fit: cover; }
   font-size: var(--text-base);
   font-family: inherit;
   outline: none;
-  transition: border-color var(--transition);
+  transition: border-color var(--transition), box-shadow var(--transition);
   width: 100%;
 }
 
