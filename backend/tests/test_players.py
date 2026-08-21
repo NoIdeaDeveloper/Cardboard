@@ -204,6 +204,82 @@ def test_delete_player_preserves_other_winners(client, db):
     assert row2.winner == "Bob"      # Bob's session untouched
 
 
+def test_delete_player_recalculates_opponent_elo(client, db):
+    """Deleting a player must reset Elo for opponents whose only scored
+    sessions involved the deleted player."""
+    gid = _make_game(client, "Solo Opponent Game")
+    alice_id = _make_player(client, "Alice")
+    bob_id = _make_player(client, "Bob")
+    # Alice beats Bob — Bob's Elo drops below 1500
+    client.post(
+        f"/api/games/{gid}/sessions",
+        json={
+            "played_at": "2024-01-01",
+            "player_names": ["Alice", "Bob"],
+            "scores": {"Alice": 100, "Bob": 50},
+        },
+    )
+    players = client.get("/api/players/").json()
+    bob_before = next(p for p in players if p["name"] == "Bob")
+    assert bob_before["elo_rating"] < 1500.0
+    assert bob_before["games_played"] == 1
+
+    # Delete Alice — Bob's only remaining scored session has a single player,
+    # so his rating and games_played must be reset to the default.
+    r = client.delete(f"/api/players/{alice_id}")
+    assert r.status_code == 204
+
+    players = client.get("/api/players/").json()
+    bob = next(p for p in players if p["name"] == "Bob")
+    assert bob["elo_rating"] == 1500.0
+    assert bob["games_played"] == 0
+
+
+def test_delete_player_recalculates_elo_from_remaining_sessions(client, db):
+    """Deleting one player must recompute opponents' Elo from the sessions
+    that remain, and must not touch players who never shared a session with
+    the deleted player."""
+    gid = _make_game(client, "Multi Game")
+    alice_id = _make_player(client, "Alice")
+    bob_id = _make_player(client, "Bob")
+    charlie_id = _make_player(client, "Charlie")
+
+    # Session 1: Alice beats Bob
+    client.post(
+        f"/api/games/{gid}/sessions",
+        json={
+            "played_at": "2024-01-01",
+            "player_names": ["Alice", "Bob"],
+            "scores": {"Alice": 100, "Bob": 50},
+        },
+    )
+    # Session 2: Bob beats Charlie
+    client.post(
+        f"/api/games/{gid}/sessions",
+        json={
+            "played_at": "2024-01-02",
+            "player_names": ["Bob", "Charlie"],
+            "scores": {"Bob": 100, "Charlie": 50},
+        },
+    )
+    players = client.get("/api/players/").json()
+    bob_before = next(p for p in players if p["name"] == "Bob")
+    assert bob_before["games_played"] == 2
+
+    # Delete Alice — Bob's Elo must be recomputed from the Bob/Charlie session
+    # alone; Charlie never played Alice, so his rating must be untouched.
+    client.delete(f"/api/players/{alice_id}")
+
+    players = client.get("/api/players/").json()
+    bob = next(p for p in players if p["name"] == "Bob")
+    charlie = next(p for p in players if p["name"] == "Charlie")
+    assert bob["games_played"] == 1
+    assert bob["elo_rating"] > 1500.0  # he won his remaining session
+    assert bob["elo_rating"] != bob_before["elo_rating"]
+    assert charlie["games_played"] == 1
+    assert charlie["elo_rating"] < 1500.0  # unchanged by Alice's deletion
+
+
 # ---------------------------------------------------------------------------
 # GET /api/players/{player_id}/rankings (per-game rankings)
 # ---------------------------------------------------------------------------

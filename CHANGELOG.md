@@ -17,6 +17,8 @@ Cardboard uses [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **Deleting a player left opponents' Elo ratings stale** — deleting a player cascaded their `SessionPlayer` rows away, but the surviving players' Elo ratings were computed against the deleted player and were never recomputed, so ratings stayed inflated/deflated forever. Deleting a player now collects every player who shared a session with them and recalculates their Elo from the remaining session history (players with no remaining scored sessions are reset to the 1500 default).
+
 - **Stats dashboard could serve stale data after player changes** — the collection ETag that gates the `/api/stats` cache only hashed the game count and `max(Game.date_modified)`, so writes that touched no game row (creating/renaming a player, avatar changes, Elo recalculation) left the ETag unchanged and the stats TTL cache served up to 60 seconds of stale leaderboard data. Players now carry a `date_modified` column (bumped on any ORM-level write, including Elo recalc), and the ETag now covers player and session change signals as well. The stats cache no longer clears entirely on a single miss — it keeps the five most recent entries, so a transient ETag churn no longer evicts every cached payload.
 
 - **"Load more" could create holes or duplicates in the collection** — clicking "Load more" while a full `loadCollection` refresh was already in flight fetched the next page at the *old* offset but shared the same request id, so the stale page passed the supersede guard and merged into the freshly-reset list, skipping or duplicating games. The request now snapshots the offset it fetched for and discards the response unless the list still expects that offset.

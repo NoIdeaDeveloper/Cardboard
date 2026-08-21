@@ -619,6 +619,21 @@ def get_player_sessions(
 @router.delete("/{player_id}", status_code=204)
 def delete_player(player_id: int, db: Session = Depends(get_db)):
     player = get_player_or_404(player_id, db)
+    # Collect former opponents before the player's SessionPlayer rows cascade —
+    # their Elo ratings were computed against this player and must be recomputed
+    # from the sessions that remain after the deletion.
+    opponent_ids = {
+        r[0]
+        for r in db.query(models.SessionPlayer.player_id)
+        .join(models.PlaySession, models.PlaySession.id == models.SessionPlayer.session_id)
+        .filter(
+            models.SessionPlayer.session_id.in_(
+                db.query(models.SessionPlayer.session_id).filter(models.SessionPlayer.player_id == player_id)
+            )
+        )
+        .filter(models.SessionPlayer.player_id != player_id)
+        .all()
+    }
     # Scrub the player's name from the free-text `winner` column of past sessions.
     # `winner` is a denormalized display string (not a FK); without this, a deleted
     # player's name persists in session history. `winner_player_id` FK cascades to
@@ -634,6 +649,12 @@ def delete_player(player_id: int, db: Session = Depends(get_db)):
     db.delete(player)
     db.commit()
     logger.info("Player deleted: id=%d winner_rows_scrubbed=%d", player_id, scrubbed)
+    # Ratings are recomputed for every player who shared a session with the
+    # deleted player; without this their ratings stay inflated/deflated forever.
+    if opponent_ids:
+        import elo_db
+        elo_db.recalculate_elo_for_players(opponent_ids, db)
+        db.commit()
 
 
 # ── Admin / Maintenance ─────────────────────────────────────────────────────
