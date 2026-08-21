@@ -1291,10 +1291,9 @@ button.footer-link {
   grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
   gap: 14px;
 }
-.games-grid.density-compact .game-card { font-size: var(--text-base); }
-.games-grid.density-compact .game-card-title { font-size: var(--text-md); }
-.games-grid.density-compact .game-card-meta { padding: 10px; }
-.games-grid.density-compact .game-card-footer { padding: 8px 10px; }
+.games-grid.density-compact .game-card-body { padding: 10px 12px; gap: 5px; }
+.games-grid.density-compact .game-card-title { font-size: var(--text-base); }
+.games-grid.density-compact .game-card-footer { padding-top: 5px; gap: 5px; }
 
 /* Density: covers only */
 .games-grid.density-covers {
@@ -1302,7 +1301,11 @@ button.footer-link {
   gap: 12px;
 }
 .games-grid.density-covers .game-card { display: block; }
-.games-grid.density-covers .game-card-media { aspect-ratio: 1 / 1.4; }
+.games-grid.density-covers .game-card-image {
+  aspect-ratio: 1 / 1.4;
+  border-bottom: none;
+  box-shadow: none;
+}
 .games-grid.density-covers .game-card-meta,
 .games-grid.density-covers .game-card-footer,
 .games-grid.density-covers .card-status,
@@ -1317,6 +1320,8 @@ button.footer-link {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  font-family: var(--font-body);
+  font-weight: 500;
 }
 
 /* ===== Games List ===== */
@@ -1433,14 +1438,13 @@ button.footer-link {
   flex-shrink: 0;
   width: 76px;
   cursor: pointer;
-  transform: rotateY(-7deg) translateZ(0);
-  transform-origin: left center;
-  transition: transform var(--transition-spring), box-shadow var(--transition-standard);
+  transform: translateZ(0);
+  transition: transform var(--transition-standard), box-shadow var(--transition-standard);
   position: relative;
 }
 
 .recently-played-card:hover {
-  transform: rotateY(0deg) translateY(-5px) translateZ(0);
+  transform: var(--hover-raise);
   z-index: var(--z-raised);
 }
 
@@ -1452,7 +1456,7 @@ button.footer-link {
   border-radius: var(--radius);
   border: 1px solid var(--border);
   display: block;
-  box-shadow: 3px 5px 14px rgba(0,0,0,0.55), inset -2px 0 6px rgba(0,0,0,0.25);
+  box-shadow: var(--shadow-1);
 }
 
 .recently-played-placeholder {
@@ -1564,8 +1568,8 @@ button.footer-link {
   display: flex;
   gap: 6px;
   justify-content: center;
-  padding: 10px 8px 10px;
-  background: linear-gradient(to top, rgba(0,0,0,0.82) 0%, rgba(0,0,0,0.3) 65%, transparent 100%);
+  padding: 8px 8px 10px;
+  background: linear-gradient(to top, rgba(0,0,0,0.78) 0%, rgba(0,0,0,0.28) 70%, transparent 100%);
   opacity: 0;
   transform: translateY(4px);
   transition: opacity var(--transition-standard), transform var(--transition-spring);
@@ -1614,16 +1618,19 @@ button.footer-link {
 }
 
 .game-card-image {
-  aspect-ratio: 3/4;
+  aspect-ratio: 4/3;
   background: var(--bg-3);
   display: flex;
   align-items: center;
   justify-content: center;
   overflow: hidden;
   position: relative;
+  /* Subtle top-edge separation from the card body */
+  border-bottom: 1px solid var(--border);
+  /* Inner vignette so cover art never bleeds into the strip below */
+  box-shadow: inset 0 -24px 32px -16px rgba(0,0,0,0.35);
   /* Ensure the container doesn't show any outline */
   outline: none !important;
-  border: none !important;
 }
 
 .game-card-image img {
@@ -1648,13 +1655,14 @@ button.footer-link {
   color: var(--text-3);
   display: flex;
   flex-shrink: 0;
+  opacity: 0.7;
 }
 
 .game-card-body {
-  padding: 14px;
+  padding: 12px 14px 12px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
   flex: 1;
 }
 
@@ -1663,7 +1671,7 @@ button.footer-link {
   font-size: var(--text-md);
   font-weight: 700;
   color: var(--text);
-  line-height: 1.3;
+  line-height: var(--leading-tight);
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -1680,7 +1688,9 @@ button.footer-link {
   margin-top: auto;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
 }
 
 /* ===== Mini Dashboard Badge Row ===== */
@@ -1858,11 +1868,13 @@ button.footer-link {
   background: var(--bg-2);
   border: 1px solid var(--border);
   border-radius: var(--radius);
+  box-shadow: var(--shadow-1);
   cursor: pointer;
-  transition: border-color var(--transition), background var(--transition);
+  transition: border-color var(--transition), background var(--transition), box-shadow var(--transition-standard), transform var(--transition-standard);
 }
 
-.game-list-item:hover { border-color: var(--accent); background: var(--bg-3); }
+.game-list-item:hover { border-color: var(--accent); background: var(--bg-3); transform: var(--hover-lift); }
+.game-list-item:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; box-shadow: var(--focus-ring); }
 
 .list-thumb {
   width: 52px;
@@ -5174,7 +5186,7 @@ img.ql-chip-avatar { display: block; object-fit: cover; }
   overflow-y: auto;
   flex: 1;
 }
-.drilldown-list .game-list-item { border-radius: 0; transition: background var(--transition), transform var(--transition); }
+.drilldown-list .game-list-item { border-radius: 0; border-left: none; border-right: none; box-shadow: none; transition: background var(--transition), transform var(--transition); }
 .drilldown-list .game-list-item + .game-list-item { border-top: 1px solid var(--border); }
 .drilldown-list .game-list-item:hover { background: var(--bg-3); transform: translateX(2px); }
 .drilldown-list .game-list-item:focus-visible { outline-offset: -2px; }
