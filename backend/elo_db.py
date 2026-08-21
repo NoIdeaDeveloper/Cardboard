@@ -216,7 +216,7 @@ def recalculate_elo_for_players(player_ids: Set[int], db: Session) -> None:
         deltas = compute_elo_updates(ratings, games_played, scores)
         for pid, delta in deltas.items():
             ratings[pid] += delta
-            games_played[pid] = 1  # increment
+            games_played[pid] += 1
 
         # Save history for target players
         for pid in player_ids:

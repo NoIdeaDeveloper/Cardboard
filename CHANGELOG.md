@@ -9,7 +9,9 @@ Cardboard uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-No notable changes yet.
+### Fixed
+
+- **Elo recalculation reset `games_played` to 1 on every session** — the replay loop in `recalculate_elo_for_players` used `games_played[pid] = 1` instead of `+= 1`, so after a player's first session every replayed game kept the count at 1. The new-player K-factor (40) was applied for the entire replay, `EloHistory.games_played_after` snapshots were wrong, and the final `player.games_played` was permanently undercounted after any recalc. The count now increments correctly, and a regression test verifies `games_played` survives a full recalculation.
 
 ---
 

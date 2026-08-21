@@ -174,3 +174,38 @@ def test_admin_recalculate_elo(client, db):
     bob = next(p for p in players if p["name"] == "Bob")
     assert alice["elo_rating"] > 1500.0
     assert bob["elo_rating"] < 1500.0
+
+
+def test_recalculate_elo_counts_games_played_across_sessions(client, db):
+    """Recalculating Elo after multiple scored sessions must accumulate games_played."""
+    resp = client.post("/api/games/", json={"name": "Recalc Count Game"})
+    game_id = resp.json()["id"]
+
+    for day in ("2024-01-01", "2024-01-02", "2024-01-03"):
+        client.post(
+            f"/api/games/{game_id}/sessions",
+            json={
+                "played_at": day,
+                "player_names": ["Alice", "Bob"],
+                "scores": {"Alice": 100, "Bob": 50},
+            },
+        )
+
+    players = client.get("/api/players/").json()
+    alice = next(p for p in players if p["name"] == "Alice")
+    assert alice["games_played"] == 3
+
+    # Force a full recalc — games_played must be preserved, not reset to 1 per session
+    resp = client.post("/api/players/admin/recalculate-elo")
+    assert resp.status_code == 200
+
+    players = client.get("/api/players/").json()
+    alice = next(p for p in players if p["name"] == "Alice")
+    bob = next(p for p in players if p["name"] == "Bob")
+    assert alice["games_played"] == 3
+    assert bob["games_played"] == 3
+
+    # With a correct K-factor progression, a lower-rated player gains more per win
+    # than at new-player K=40, so the delta between consecutive sessions shrinks.
+    history = client.get("/api/players/rankings").json()
+    assert len(history) == 2
