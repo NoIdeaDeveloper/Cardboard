@@ -11,6 +11,8 @@ Cardboard uses [Semantic Versioning](https://semver.org/).
 
 ### Security
 
+- **Import and edit could store image URLs pointing at internal hosts** — image URLs coming from BGG responses, BGG/CSV imports, or the add/edit game forms were persisted verbatim and later served back to browsers (collection view, share page, static-HTML export) or embedded as `<img src>`; only the background cache download was SSRF-checked. All persist paths now reject `image_url`/`thumbnail_url` values that fail the SSRF validation (scheme must be http/https and must not resolve to private/loopback hosts) with a 400, and BGG parse/import silently drops invalid URLs instead of storing them.
+
 - **Unauthenticated share-token creation** — `POST /api/share/tokens` could be called by anyone when `CARDBOARD_API_KEY` was unset, minting a permanent token with full read access to the collection. The endpoint now requires `require_api_key` like the other destructive endpoints, and the `label` query parameter is length-limited to 255 characters.
 
 ### Fixed

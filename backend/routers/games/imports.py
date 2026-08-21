@@ -17,6 +17,7 @@ from database import get_db
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy import func
 from sqlalchemy.orm import Session
+from utils import validate_url_safety
 
 from routers.games._common import _save_tags
 
@@ -142,6 +143,14 @@ async def import_bgg(file: UploadFile = File(...), db: Session = Depends(get_db)
             if image_url.startswith("//"):
                 image_url = "https:" + image_url
             image_url = image_url or None
+            if image_url:
+                # Never persist URLs pointing at internal/private hosts — the
+                # URL is served back to browsers (collection view, share page,
+                # export), so validate before storing, not only at cache time.
+                is_valid, _err = validate_url_safety(image_url)
+                if not is_valid:
+                    logger.warning("BGG import image URL rejected for %r: %s", name, _err)
+                    image_url = None
 
             game = models.Game(
                 name=name,

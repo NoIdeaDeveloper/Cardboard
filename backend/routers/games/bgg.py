@@ -20,7 +20,7 @@ import schemas
 from database import get_db
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
-from utils import build_safe_opener, get_client_ip, get_game_or_404, sanitize_html_to_text
+from utils import build_safe_opener, get_client_ip, get_game_or_404, sanitize_html_to_text, validate_url_safety
 
 from routers.games._common import (
     _attach_parent_name,
@@ -161,6 +161,15 @@ def _parse_bgg_item(item: ET.Element) -> dict:
     image_url = (img_el.text or "").strip() if img_el is not None else None
     if image_url and image_url.startswith("//"):
         image_url = "https:" + image_url
+    if image_url:
+        # Reject URLs pointing at internal/private hosts before persisting —
+        # a hostile or compromised BGG response must never plant a URL that
+        # clients or the export page would later embed (defense in depth on
+        # top of the background cache task's own validation).
+        is_valid, _err = validate_url_safety(image_url)
+        if not is_valid:
+            logger.warning("BGG image URL rejected for %r: %s", name, _err)
+            image_url = None
 
     return {
         "name": name,
@@ -198,6 +207,10 @@ def bgg_search(request: Request, q: str = Query(..., min_length=1, max_length=20
             year = year_el.get("value") if year_el is not None else None
             thumb_val = item.get("thumbnail") or item.findtext("thumbnail")
             thumbnail = ("https:" + thumb_val) if thumb_val and thumb_val.startswith("//") else thumb_val
+            if thumbnail:
+                is_valid, _err = validate_url_safety(thumbnail)
+                if not is_valid:
+                    thumbnail = None
             if bgg_id and name:
                 results.append({"bgg_id": bgg_id, "name": name, "year_published": int(year) if year else None, "thumbnail": thumbnail})
         return results

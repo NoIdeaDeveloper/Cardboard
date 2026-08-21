@@ -37,6 +37,7 @@ from utils import (
     strip_image_metadata,
     validate_file_extension,
     validate_image_content,
+    validate_url_safety,
 )
 
 from routers.game_images import delete_all_gallery_images
@@ -451,6 +452,15 @@ def create_game(
     # Separate tag fields — they live only in junction tables, not on the model
     tag_data = {k: data.pop(k) for k in list(data) if k in _TAG_FIELD_NAMES}
 
+    # Reject remote image URLs pointing at internal/private hosts before
+    # persisting — image_url is served back to browsers and embedded in the
+    # static-HTML export, so it must never reference internal addresses.
+    for url_field in ("image_url", "thumbnail_url"):
+        if data.get(url_field) and not data[url_field].startswith("/api/"):
+            is_valid, _err = validate_url_safety(data[url_field])
+            if not is_valid:
+                raise HTTPException(status_code=400, detail=f"{url_field} is not a valid external URL")
+
     # Duplicate check: match by BGG ID (if provided) or case-insensitive name
     if not allow_duplicate:
         name = (data.get("name") or "").strip()
@@ -509,6 +519,12 @@ def update_game(
     if "image_url" in update_data:
         new_image_url = update_data["image_url"] or None
         update_data["image_url"] = new_image_url  # normalise empty string → None
+        if new_image_url and not new_image_url.startswith("/api/"):
+            # Reject internal/private URLs before persisting (same guard as
+            # create_game — image_url is served back to browsers).
+            is_valid, _err = validate_url_safety(new_image_url)
+            if not is_valid:
+                raise HTTPException(status_code=400, detail=f"image_url is not a valid external URL: {_err}")
         if not new_image_url or not new_image_url.startswith("/api/"):
             _delete_cached_image(game_id)
             db_game.image_cached = False

@@ -117,3 +117,88 @@ def test_build_safe_opener_with_ssl_context():
     opener = utils.build_safe_opener(context=ctx)
     handler = next(h for h in opener.handlers if isinstance(h, utils._SSRFSafeHTTPHandler))
     assert handler._ssl_context is ctx
+
+
+# ---------------------------------------------------------------------------
+# Persist-time image URL validation (defense in depth: URLs are served back to
+# browsers and embedded in the static-HTML export, so internal/private URLs
+# must be rejected when stored, not only when the background cache runs)
+# ---------------------------------------------------------------------------
+
+def test_create_game_rejects_private_image_url(client):
+    r = client.post("/api/games/", json={"name": "Evil", "image_url": "http://169.254.169.254/meta"})
+    assert r.status_code == 400
+
+
+def test_create_game_rejects_private_thumbnail_url(client):
+    r = client.post("/api/games/", json={"name": "Evil2", "thumbnail_url": "http://127.0.0.1/x.jpg"})
+    assert r.status_code == 400
+
+
+def test_create_game_accepts_public_image_url(client):
+    # The background image-cache task talks to the production engine (separate
+    # in-memory DB with no tables under tests) — patch it out.
+    with mock.patch("routers.games.crud._cache_game_image"):
+        r = client.post("/api/games/", json={"name": "Good", "image_url": "https://example.com/cover.jpg"})
+    assert r.status_code == 201
+    assert r.json()["image_url"] == "https://example.com/cover.jpg"
+
+
+def test_update_game_rejects_private_image_url(client):
+    gid = client.post("/api/games/", json={"name": "Change Me"}).json()["id"]
+    r = client.patch(f"/api/games/{gid}", json={"image_url": "http://10.0.0.1/evil.jpg"})
+    assert r.status_code == 400
+    game = client.get(f"/api/games/{gid}").json()
+    assert game["image_url"] is None  # original value untouched
+
+
+def test_bgg_import_rejects_private_image_url(client):
+    """A hostile BGG collection XML must not persist an internal URL."""
+    evil_xml = '<?xml version="1.0" encoding="utf-8"?>' \
+        '<items totalitems="1"><item objecttype="thing" objectid="1" subtype="boardgame" collid="1">' \
+        '<name sortindex="1">Evil Game</name>' \
+        '<yearpublished>2020</yearpublished>' \
+        '<image>http://169.254.169.254/meta</image>' \
+        '<stats minplayers="1" maxplayers="4"><rating value="N/A"><average value="8"/></rating></stats>' \
+        '<status own="1" prevowned="0" fortrade="0" want="0" wanttoplay="0" wanttobuy="0" ' \
+        'wishlist="0" preordered="0" lastmodified="2024-01-01 00:00:00"/></item></items>'
+    import io
+    r = client.post(
+        "/api/games/import/bgg",
+        files={"file": ("evil.xml", io.BytesIO(evil_xml.encode()), "text/xml")},
+    )
+    assert r.status_code == 200
+    data = r.json()
+    assert data["imported"] == 1
+    games = client.get("/api/games/?search=Evil Game").json()
+    assert len(games) == 1
+    assert games[0]["image_url"] is None
+
+
+def test_bgg_parse_rejects_private_image_url():
+    """_parse_bgg_item must drop image URLs pointing at internal hosts."""
+    import xml.etree.ElementTree as ET
+
+    from routers.games.bgg import _parse_bgg_item
+    item = ET.fromstring(
+        '<item type="thing" id="1">'
+        '<name type="primary" value="Test"/>'
+        '<image>http://192.168.1.1/steal.jpg</image>'
+        "</item>"
+    )
+    data = _parse_bgg_item(item)
+    assert data["image_url"] is None
+
+
+def test_bgg_parse_keeps_public_image_url():
+    import xml.etree.ElementTree as ET
+
+    from routers.games.bgg import _parse_bgg_item
+    item = ET.fromstring(
+        '<item type="thing" id="1">'
+        '<name type="primary" value="Test"/>'
+        '<image>https://cf.geekdo-images.com/cover.jpg</image>'
+        "</item>"
+    )
+    data = _parse_bgg_item(item)
+    assert data["image_url"] == "https://cf.geekdo-images.com/cover.jpg"
