@@ -17,6 +17,8 @@ Cardboard uses [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **Notification and want-to-play retention sweeps compared aware against naive datetimes** — `_prune_old_notifications` and `_sweep_expired_requests` built their cutoff with `datetime.now(timezone.utc) - timedelta(...)` (tz-aware) and compared it against SQLite-stored `DateTime` columns, which round-trip as naive datetimes. The comparison was ambiguous — a `TypeError` on some drivers, silently wrong pruning on others. Both cutoffs are now stripped to naive UTC before the query, matching the stored representation (same pattern already used for share-token expiry checks).
+
 - **BGG plays import ran one query per play row (N+1)** — every `<play>` element issued a `COUNT(*)` to dedupe on `(game_id, played_at)`, and every affected game then ran its own `MAX(played_at)` + fetch to refresh `last_played`; large plays exports became quadratic. The existing `(game_id, played_at)` pairs are now pre-loaded into one in-memory map (kept up to date as rows are added within the same file), and `last_played` is recomputed for all affected games with a single `GROUP BY` query.
 
 - **Typing in the players search discarded an open rename field** — the players modal's list re-rendered on every keystroke of the search box, silently destroying an in-progress inline rename input (and its typed text) or delete confirmation. The list now stays untouched while a rename input or confirm row is open, and the list re-syncs with the current search/sort after cancelling either action.

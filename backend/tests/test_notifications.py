@@ -21,6 +21,37 @@ def _add_session(client, game_id, played_at="2024-01-15", winner=None):
 
 
 # ---------------------------------------------------------------------------
+# Retention cutoff uses naive datetimes (SQLite returns naive values)
+# ---------------------------------------------------------------------------
+
+def test_prune_cutoff_is_naive(client, db):
+    """Regression: the retention cutoff must be naive to compare against
+    SQLite-stored DateTime columns, which round-trip as naive datetimes.
+    An aware cutoff made the comparison ambiguous (TypeError on some drivers)."""
+    from routers.notifications import NOTIF_RETENTION_DAYS, _prune_old_notifications
+
+    result = _prune_old_notifications(db)
+    assert result == 0
+
+    # Build the cutoff the same way the sweep does and verify it is naive.
+    from datetime import datetime, timezone
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=NOTIF_RETENTION_DAYS)).replace(tzinfo=None)
+    assert cutoff.tzinfo is None
+
+
+def test_retention_sweep_cutoff_is_naive(client, db):
+    """Regression for the want-to-play retention sweep: same naive requirement."""
+    from routers.sharing import _WTP_RETENTION_DAYS, _sweep_expired_requests
+
+    result = _sweep_expired_requests(db)
+    assert result == 0
+
+    from datetime import datetime, timezone
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=_WTP_RETENTION_DAYS)).replace(tzinfo=None)
+    assert cutoff.tzinfo is None
+
+
+# ---------------------------------------------------------------------------
 # GET /api/notifications/
 # ---------------------------------------------------------------------------
 

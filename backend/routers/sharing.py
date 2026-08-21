@@ -56,7 +56,10 @@ def _sweep_expired_requests(db: Session) -> int:
     """Delete want-to-play requests older than the retention window. Returns count."""
     if _WTP_RETENTION_DAYS <= 0:
         return 0
-    cutoff = datetime.now(timezone.utc) - timedelta(days=_WTP_RETENTION_DAYS)
+    # SQLite returns DateTime columns as naive datetimes — strip tzinfo from
+    # the cutoff so the comparison is unambiguous (same pattern as the
+    # notification retention sweep).
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=_WTP_RETENTION_DAYS)).replace(tzinfo=None)
     deleted = (
         db.query(models.WantToPlayRequest)
         .filter(models.WantToPlayRequest.created_at < cutoff)

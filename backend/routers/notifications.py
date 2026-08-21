@@ -190,7 +190,10 @@ def _prune_old_notifications(db: Session) -> int:
     sweep *could* resurrect the notification (the dedup signal is gone), but the
     90-day window makes this unlikely to recur for the same signal.
     """
-    cutoff = datetime.now(timezone.utc) - timedelta(days=NOTIF_RETENTION_DAYS)
+    # SQLite returns DateTime columns as naive datetimes, so the cutoff must be
+    # naive too — comparing an aware value against naive stored rows is
+    # ambiguous (TypeError on some drivers, silently wrong ordering on others).
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=NOTIF_RETENTION_DAYS)).replace(tzinfo=None)
     deleted = (
         db.query(models.Notification)
         .filter(
