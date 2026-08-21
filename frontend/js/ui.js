@@ -10,6 +10,11 @@
 // otherwise re-renders leak observers that hold strong refs to detached sections.
 let _statsSectionObserver = null;
 
+// Hoisted alongside _statsSectionObserver: the bar-animation observer also
+// holds strong refs to detached .stats-section/.stat-cards elements and must
+// be disconnected on every rebuild or re-renders leak observers.
+let _statsBarIO = null;
+
 // ===== Location Datalist Helper =====
 function _buildLocationDatalist(games, field) {
   const freq = {};
@@ -2713,6 +2718,9 @@ function buildStatsView(stats, games, prefs = {}, onPrefsChange = null, goals = 
   // observers that hold strong refs to detached .stats-section elements.
   _statsSectionObserver?.disconnect();
   _statsSectionObserver = null;
+  // Same for the bar-animation observer.
+  _statsBarIO?.disconnect();
+  _statsBarIO = null;
   const SECTION_DEFAULTS = {
     show_summary: true, show_most_played: true, show_top_players: true,
     show_recently_played: true,
@@ -3610,7 +3618,7 @@ function buildStatsView(stats, games, prefs = {}, onPrefsChange = null, goals = 
 
   // Animate stat bars and health ring on viewport entry
   if ('IntersectionObserver' in window) {
-    const _statsIO = new IntersectionObserver((entries, obs) => {
+    _statsBarIO = new IntersectionObserver((entries, obs) => {
       entries.forEach(entry => {
         if (!entry.isIntersecting) return;
         // Animate bar fills
@@ -3631,7 +3639,7 @@ function buildStatsView(stats, games, prefs = {}, onPrefsChange = null, goals = 
     // (buildStatsView returns a detached element; the caller appends it after this call).
     // Observing detached elements fires isIntersecting:false immediately and may not re-fire.
     requestAnimationFrame(() => {
-      el.querySelectorAll('.stats-section, .stat-cards').forEach(s => _statsIO.observe(s));
+      el.querySelectorAll('.stats-section, .stat-cards').forEach(s => _statsBarIO.observe(s));
     });
   } else {
     // Fallback: set immediately

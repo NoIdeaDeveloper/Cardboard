@@ -17,6 +17,8 @@ Cardboard uses [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **Stats tab leaked an IntersectionObserver on every refresh** — the bar/health-ring animation observer was created locally inside `buildStatsView` and never disconnected, so every stats re-render (background refresh, switching views) leaked an observer holding strong references to the detached stats sections. It is now hoisted alongside the jump-nav observer and disconnected at the start of each rebuild.
+
 - **"Days ago" labels disagreed with the dates shown in modals** — the recently-played shelf and the game card mini-dashboard computed recency with `new Date(last_played + 'T00:00:00')`, which parses in the browser's *local* timezone, while `formatDate` parses with `'T00:00:00Z'` and renders in UTC. Around midnight in non-UTC timezones a session logged "today" could render as "Yesterday" (or vice versa) in the shelf, contradicting the modal. Recency is now computed through a shared `daysSinceDate` helper that uses the same UTC day boundary as `formatDate`, and the player-profile "last played" date is rendered in UTC too.
 
 - **Buttons with icon listeners lost those listeners after a loading cycle** — `withLoading` saved and restored the button's label via `innerHTML`, which re-parses the markup and silently drops any listeners bound to child nodes (e.g. an icon span). The original child nodes are now preserved and restored with `replaceChildren`, so listeners survive, and the loading label is set via `textContent` (no markup injection).
