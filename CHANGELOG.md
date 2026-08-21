@@ -9,6 +9,10 @@ Cardboard uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Design tokens consolidated across the stylesheet** — the `:root` scale previously declared 7 type steps, 6 spacing steps, and 3 shadows that were almost entirely unused in favor of one-off literals: 44 distinct hardcoded `font-size` values and 40+ hardcoded `border-radius` pixel values. All font sizes now map onto a 9-step scale (`--text-xs` through `--text-4xl`, with two new steps for hero figures and empty-state headlines), all single-value radii onto the `--radius-xs…-lg` ladder, and shadows onto a new 3-tier elevation system (`--shadow-1` resting, `--shadow-2` raised, `--shadow-3` floating) with light-theme parity defined in one place. Also added `--hover-lift`/`--hover-raise`/`--press-scale` motion tokens, line-height tokens, and visible `:focus-visible` rings on buttons, icon buttons, nav buttons, selects, and status pills (previously only inputs and cards had a ring). An orphaned duplicate rule block in the Game Night section (dead since an earlier edit) was removed. No component behavior changes — this is the foundation pass for the UI refresh.
+
 ### Security
 
 - **Import and edit could store image URLs pointing at internal hosts** — image URLs coming from BGG responses, BGG/CSV imports, or the add/edit game forms were persisted verbatim and later served back to browsers (collection view, share page, static-HTML export) or embedded as `<img src>`; only the background cache download was SSRF-checked. All persist paths now reject `image_url`/`thumbnail_url` values that fail the SSRF validation (scheme must be http/https and must not resolve to private/loopback hosts) with a 400, and BGG parse/import silently drops invalid URLs instead of storing them.
