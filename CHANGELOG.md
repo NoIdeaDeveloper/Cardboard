@@ -17,6 +17,8 @@ Cardboard uses [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **Stale share-token copies accumulated in localStorage** — raw share tokens are cached in `localStorage` keyed by their server-side hash so the share page can rebuild full links. Tokens revoked from another browser/session were never swept, so the cache grew forever. Opening the share panel now drops cached tokens whose hash no longer exists on the server (only when the token list loads successfully, so a transient network error can never wipe the cache).
+
 - **Quick-logged sessions were lost on 5xx errors while online** — the offline session queue only activated on a network `TypeError` while `navigator.onLine` was false. A session logged during a server restart, maintenance, or proxy error (HTTP 5xx) failed immediately even though the user perceived it as logged, and a `TypeError` with a stale `onLine` flag (DNS failure, captive portal) was dropped instead of queued. Any network failure or 5xx response now queues the session in IndexedDB, and the UI shows an "Offline — session queued" toast instead of an error.
 
 - **Stats tab leaked an IntersectionObserver on every refresh** — the bar/health-ring animation observer was created locally inside `buildStatsView` and never disconnected, so every stats re-render (background refresh, switching views) leaked an observer holding strong references to the detached stats sections. It is now hoisted alongside the jump-nav observer and disconnected at the start of each rebuild.

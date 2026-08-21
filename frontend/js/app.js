@@ -5684,6 +5684,23 @@ if ('serviceWorker' in navigator) {
       ]);
     } catch (_) { fetchError = true; }
 
+    if (!fetchError) {
+      // Drop cached raw tokens for links that no longer exist on the server
+      // (revoked here or in another session). Only run on a successful fetch —
+      // a transient network error must not wipe the local token cache.
+      try {
+        const validHashes = new Set(tokens.map(t => t.token));
+        const staleKeys = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && key.startsWith('share_token_') && !validHashes.has(key.slice('share_token_'.length))) {
+            staleKeys.push(key);
+          }
+        }
+        staleKeys.forEach(k => localStorage.removeItem(k));
+      } catch (_) { /* localStorage unavailable — non-fatal */ }
+    }
+
     function formatExpiry(t) {
       if (!t.expires_at) return '<span class="share-token-expiry never">Never expires</span>';
       const exp = new Date(t.expires_at);
