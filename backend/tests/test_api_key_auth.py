@@ -88,3 +88,29 @@ def test_restore_requires_api_key_when_configured(client, db, monkeypatch):
         headers={"X-API-Key": "wrong"},
     )
     assert r.status_code == 401
+
+
+def test_create_share_token_requires_api_key_when_configured(client, db, monkeypatch):
+    """Share-token creation grants full read access to the collection, so it
+    must be gated like the other destructive endpoints."""
+    _set_key(monkeypatch, "secret-key")
+    r = client.post("/api/share/tokens")
+    assert r.status_code == 401
+
+
+def test_create_share_token_accepts_correct_api_key(client, db, monkeypatch):
+    _set_key(monkeypatch, "secret-key")
+    r = client.post("/api/share/tokens", headers={"X-API-Key": "secret-key"})
+    assert r.status_code == 201
+    assert r.json()["token"]
+
+
+def test_create_share_token_no_auth_when_unconfigured(client, db, monkeypatch):
+    _clear_key(monkeypatch)
+    r = client.post("/api/share/tokens")
+    assert r.status_code == 201
+
+
+def test_create_share_token_rejects_oversized_label(client, db, monkeypatch):
+    r = client.post("/api/share/tokens", params={"label": "x" * 300})
+    assert r.status_code == 422

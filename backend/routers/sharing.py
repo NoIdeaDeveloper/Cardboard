@@ -11,10 +11,10 @@ from typing import List, Optional
 import models
 import schemas
 from database import get_db
-from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from sqlalchemy import func
 from sqlalchemy.orm import Session
-from utils import get_client_ip, get_game_or_404
+from utils import get_client_ip, get_game_or_404, require_api_key
 
 from routers.games import _attach_parent_name, _load_tags, build_game_responses
 
@@ -82,7 +82,13 @@ ALLOWED_EXPIRY_MINUTES = (10, 30, 60)
 
 
 @router.post("/tokens", response_model=schemas.ShareTokenResponse, status_code=201)
-def create_token(label: Optional[str] = None, expires_in: Optional[int] = None, db: Session = Depends(get_db)):
+def create_token(
+    request: Request,
+    label: Optional[str] = Query(None, max_length=255),
+    expires_in: Optional[int] = None,
+    db: Session = Depends(get_db),
+):
+    require_api_key(request)
     if expires_in is not None and expires_in not in ALLOWED_EXPIRY_MINUTES:
         raise HTTPException(status_code=400, detail=f"expires_in must be one of {ALLOWED_EXPIRY_MINUTES} or omitted")
     raw_token = secrets.token_urlsafe(32)

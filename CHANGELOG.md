@@ -9,6 +9,10 @@ Cardboard uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Security
+
+- **Unauthenticated share-token creation** — `POST /api/share/tokens` could be called by anyone when `CARDBOARD_API_KEY` was unset, minting a permanent token with full read access to the collection. The endpoint now requires `require_api_key` like the other destructive endpoints, and the `label` query parameter is length-limited to 255 characters.
+
 ### Fixed
 
 - **Elo recalculation reset `games_played` to 1 on every session** — the replay loop in `recalculate_elo_for_players` used `games_played[pid] = 1` instead of `+= 1`, so after a player's first session every replayed game kept the count at 1. The new-player K-factor (40) was applied for the entire replay, `EloHistory.games_played_after` snapshots were wrong, and the final `player.games_played` was permanently undercounted after any recalc. The count now increments correctly, and a regression test verifies `games_played` survives a full recalculation.
