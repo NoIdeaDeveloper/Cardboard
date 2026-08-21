@@ -177,14 +177,19 @@ def update_session(session_id: int, data: schemas.PlaySessionUpdate, db: Session
     update_data = data.model_dump(exclude_unset=True)
     player_names = update_data.pop("player_names", None)
     scores = update_data.pop("scores", None)
+    old_winner = db_session.winner
     for field, value in update_data.items():
         setattr(db_session, field, value)
 
-    # Resolve winner name to player FK (skip for co-op sessions)
+    # Resolve winner name to player FK (skip for co-op sessions).
+    # Only re-resolve when the winner string actually changed — re-submitting
+    # the same name (e.g. a form that always sends winner) must not clobber a
+    # previously resolved winner_player_id with None when the name no longer
+    # matches a registered player (case change, renamed/deleted player).
     if "cooperative" in update_data and update_data["cooperative"]:
         db_session.winner = None
         db_session.winner_player_id = None
-    elif "winner" in update_data:
+    elif "winner" in update_data and update_data["winner"] != old_winner:
         db_session.winner_player_id = _resolve_winner_id(db_session.winner, db)
 
     if player_names is not None:

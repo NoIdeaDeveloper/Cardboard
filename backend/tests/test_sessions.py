@@ -187,6 +187,42 @@ def test_update_session_notes_and_winner(client):
     assert data["winner"] == "Alice"
 
 
+def test_update_session_winner_noop_keeps_resolved_fk(client, db):
+    """Re-submitting an unchanged winner must not NULL a resolved winner_player_id."""
+    import models
+    gid = _make_game(client)
+    client.post("/api/players/", json={"name": "Alice"})
+    session_id = _add_session(client, gid, winner="Alice").json()["id"]
+
+    row = db.query(models.PlaySession).filter(models.PlaySession.id == session_id).first()
+    assert row.winner_player_id is not None
+
+    # No-op re-submit of the same winner string (e.g. form re-save)
+    r = client.patch(f"/api/sessions/{session_id}", json={"winner": "Alice"})
+    assert r.status_code == 200
+
+    db.expire_all()
+    row = db.query(models.PlaySession).filter(models.PlaySession.id == session_id).first()
+    assert row.winner_player_id is not None
+
+
+def test_update_session_winner_change_resolves_fk(client, db):
+    """Changing the winner to a different registered player re-resolves the FK."""
+    import models
+    gid = _make_game(client)
+    client.post("/api/players/", json={"name": "Alice"})
+    client.post("/api/players/", json={"name": "Bob"})
+    session_id = _add_session(client, gid, winner="Alice").json()["id"]
+
+    r = client.patch(f"/api/sessions/{session_id}", json={"winner": "Bob"})
+    assert r.status_code == 200
+
+    db.expire_all()
+    row = db.query(models.PlaySession).filter(models.PlaySession.id == session_id).first()
+    bob = db.query(models.Player).filter(models.Player.name == "Bob").first()
+    assert row.winner_player_id == bob.id
+
+
 # ---------------------------------------------------------------------------
 # Cooperative sessions
 # ---------------------------------------------------------------------------
