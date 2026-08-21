@@ -158,14 +158,18 @@ function showConfirm(title, message, opts = {}) {
 // ===== Async Helper =====
 
 async function withLoading(btn, fn, loadingText) {
-  const orig = btn.innerHTML;
+  // Save the real child nodes (including any listeners bound to icons inside
+  // the button). Restoring via innerHTML would re-parse the markup and
+  // silently drop those listeners — replaceChildren puts the original nodes
+  // (and their listeners) back exactly as they were.
+  const origChildren = Array.from(btn.childNodes);
   btn.disabled = true;
-  if (loadingText) btn.innerHTML = loadingText;
+  if (loadingText) btn.textContent = loadingText;
   try {
     await fn();
   } finally {
     btn.disabled = false;
-    btn.innerHTML = orig;
+    btn.replaceChildren(...origChildren);
   }
 }
 

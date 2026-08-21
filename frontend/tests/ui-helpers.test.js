@@ -4,11 +4,11 @@ import { loadScripts } from './helpers/load.js';
 // ui-helpers references escapeHtml from shared-utils, so load both together.
 const {
   renderStars, renderDifficultyBar, formatDatetime, isSafeUrl,
-  loadJsonFromStorage, saveJsonToStorage, cardMediaHtml, placeholderSvg,
+  loadJsonFromStorage, saveJsonToStorage, cardMediaHtml, placeholderSvg, withLoading,
 } = loadScripts(
   ['shared-utils.js', 'ui-helpers.js'],
   ['renderStars', 'renderDifficultyBar', 'formatDatetime', 'isSafeUrl',
-    'loadJsonFromStorage', 'saveJsonToStorage', 'cardMediaHtml', 'placeholderSvg'],
+    'loadJsonFromStorage', 'saveJsonToStorage', 'cardMediaHtml', 'placeholderSvg', 'withLoading'],
 );
 
 describe('renderStars', () => {
@@ -100,5 +100,42 @@ describe('cardMediaHtml', () => {
   it('falls back to the placeholder svg when the URL is unsafe/missing', () => {
     expect(cardMediaHtml({ name: 'X' })).toContain('placeholder-icon');
     expect(cardMediaHtml({ name: 'X', image_url: 'javascript:1' })).toContain('placeholder-icon');
+  });
+});
+
+describe('withLoading', () => {
+  it('disables the button, shows loading text, then restores the original children', async () => {
+    const btn = document.createElement('button');
+    const icon = document.createElement('span');
+    icon.textContent = '⭐';
+    btn.appendChild(icon);
+    btn.appendChild(document.createTextNode(' Save'));
+
+    await withLoading(btn, async () => {}, 'Working…');
+
+    expect(btn.disabled).toBe(false);
+    expect(btn.textContent).toBe('⭐ Save');
+  });
+  it('preserves listener bindings on child nodes across the loading cycle', async () => {
+    const btn = document.createElement('button');
+    const icon = document.createElement('span');
+    icon.textContent = '⭐';
+    let clicks = 0;
+    icon.addEventListener('click', () => clicks++);
+    btn.appendChild(icon);
+
+    await withLoading(btn, async () => {}, 'Working…');
+
+    icon.click();
+    expect(clicks).toBe(1);
+  });
+  it('re-enables the button and restores children even when fn throws', async () => {
+    const btn = document.createElement('button');
+    btn.textContent = 'Go';
+
+    await expect(withLoading(btn, async () => { throw new Error('boom'); }, 'Working…')).rejects.toThrow('boom');
+
+    expect(btn.disabled).toBe(false);
+    expect(btn.textContent).toBe('Go');
   });
 });

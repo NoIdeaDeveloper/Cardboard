@@ -17,6 +17,8 @@ Cardboard uses [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **Buttons with icon listeners lost those listeners after a loading cycle** — `withLoading` saved and restored the button's label via `innerHTML`, which re-parses the markup and silently drops any listeners bound to child nodes (e.g. an icon span). The original child nodes are now preserved and restored with `replaceChildren`, so listeners survive, and the loading label is set via `textContent` (no markup injection).
+
 - **Notification and want-to-play retention sweeps compared aware against naive datetimes** — `_prune_old_notifications` and `_sweep_expired_requests` built their cutoff with `datetime.now(timezone.utc) - timedelta(...)` (tz-aware) and compared it against SQLite-stored `DateTime` columns, which round-trip as naive datetimes. The comparison was ambiguous — a `TypeError` on some drivers, silently wrong pruning on others. Both cutoffs are now stripped to naive UTC before the query, matching the stored representation (same pattern already used for share-token expiry checks).
 
 - **BGG plays import ran one query per play row (N+1)** — every `<play>` element issued a `COUNT(*)` to dedupe on `(game_id, played_at)`, and every affected game then ran its own `MAX(played_at)` + fetch to refresh `last_played`; large plays exports became quadratic. The existing `(game_id, played_at)` pairs are now pre-loaded into one in-memory map (kept up to date as rows are added within the same file), and `last_played` is recomputed for all affected games with a single `GROUP BY` query.
