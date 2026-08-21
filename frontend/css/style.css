@@ -2568,8 +2568,8 @@ button.footer-link {
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(to bottom, rgba(0,0,0,0.10) 0%, rgba(0,0,0,0.55) 100%),
-    linear-gradient(to top, rgba(16,12,9,0.40) 0%, transparent 35%);
+    linear-gradient(to bottom, rgba(0,0,0,0.28) 0%, rgba(0,0,0,0.05) 30%, rgba(0,0,0,0.62) 100%),
+    linear-gradient(to top, rgba(16,12,9,0.55) 0%, transparent 42%);
   z-index: var(--z-base);
 }
 
@@ -2633,6 +2633,8 @@ button.footer-link {
   padding: 4px 8px;
   background: var(--bg-3);
   border-bottom: 1px solid var(--border);
+  /* Slight inner glow ties it to the hero above without a hard color step */
+  box-shadow: inset 0 -8px 12px -10px rgba(0,0,0,0.5);
   min-height: 38px;
 }
 
@@ -2691,10 +2693,10 @@ button.footer-link {
 
 /* ===== Modal Body ===== */
 .modal-body {
-  padding: 24px;
+  padding: 26px 24px 24px;
   display: flex;
   flex-direction: column;
-  gap: 22px;
+  gap: 20px;
 }
 
 /* ===== Sticky close bar (mobile) ===== */
@@ -2747,8 +2749,8 @@ button.footer-link {
 }
 
 .modal-title {
-  font-family: Georgia, serif;
-  font-size: var(--text-2xl);
+  font-family: var(--font-display);
+  font-size: var(--text-3xl);
   font-weight: 700;
   line-height: 1.15;
   letter-spacing: -0.01em;
@@ -3400,14 +3402,14 @@ input[type="date"] { color-scheme: dark; }
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding-top: 20px;
-  margin-top: 4px;
+  padding: 16px 0 2px;
+  margin-top: 2px;
   border-top: 1px solid var(--border);
   gap: 10px;
   flex-wrap: wrap;
 }
 
-.modal-actions-right { display: flex; gap: 8px; }
+.modal-actions-right { display: flex; gap: 8px; flex-wrap: wrap; }
 
 /* ===== Coach Mark Tour ===== */
 .tour-overlay {
@@ -3568,7 +3570,7 @@ input[type="date"] { color-scheme: dark; }
 .confirm-dialog.open { transform: scale(1) translateY(0); opacity: 1; }
 
 .confirm-title {
-  font-family: Georgia, serif;
+  font-family: var(--font-display);
   font-size: var(--text-xl);
   margin-bottom: 10px;
   letter-spacing: -0.01em;
@@ -3622,7 +3624,7 @@ input[type="date"] { color-scheme: dark; }
   margin-bottom: 16px;
 }
 .restore-preview-header h3 {
-  font-family: Georgia, serif;
+  font-family: var(--font-display);
   font-size: var(--text-xl);
   margin: 0;
   letter-spacing: -0.01em;
@@ -4311,7 +4313,7 @@ img.ql-chip-avatar { display: block; object-fit: cover; }
 .stats-header { margin-bottom: 24px; display: flex; align-items: center; justify-content: space-between; }
 
 .stats-title {
-  font-family: Georgia, serif;
+  font-family: var(--font-display);
   font-size: var(--text-3xl);
   font-weight: 700;
   color: var(--text);
@@ -5169,7 +5171,7 @@ img.ql-chip-avatar { display: block; object-fit: cover; }
   flex-shrink: 0;
 }
 .drilldown-title {
-  font-family: Georgia, serif;
+  font-family: var(--font-display);
   font-size: var(--text-lg);
   font-weight: bold;
   color: var(--text);
