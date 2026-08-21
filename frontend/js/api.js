@@ -336,14 +336,17 @@ async function flushOfflineSessionQueue() {
   return flushed;
 }
 
-// Wrap addSession: on network failure while offline, queue and throw a
-// sentinel error so callers can keep the optimistic UI update.
+// Wrap addSession: on network failure or a server error (5xx), queue the
+// session and throw a sentinel error so callers can keep the optimistic UI
+// update. A 5xx means the server is up but failing (restart, maintenance,
+// proxy error) — the user still perceives the session as logged, so queueing
+// and retrying on the next 'online' event is more honest than a hard error.
 const _realAddSession = API.addSession;
 API.addSession = async function(gameId, data) {
   try {
     return await _realAddSession(gameId, data);
   } catch (err) {
-    if (err instanceof TypeError && !navigator.onLine) {
+    if (err instanceof TypeError || (err.status && err.status >= 500)) {
       await _oqAdd(gameId, data);
       const queued = new Error('Session queued — will sync when back online.');
       queued.isOfflineQueued = true;
