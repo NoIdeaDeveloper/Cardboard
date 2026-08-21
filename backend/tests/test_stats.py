@@ -222,3 +222,76 @@ def test_stats_cache_304_when_etag_matches(client):
 
     r2 = client.get("/api/stats/", headers={"If-None-Match": etag})
     assert r2.status_code == 304
+
+
+def test_stats_etag_changes_on_player_write(client):
+    """Player-only writes (create / rename) must invalidate the stats ETag."""
+    _make_game(client, name="Stats Game")
+
+    r1 = client.get("/api/stats/")
+    assert r1.headers.get("X-Stats-Cache") == "MISS"
+    etag1 = r1.headers["ETag"]
+
+    # Create a player — no game rows change, but the stats leaderboard does.
+    r = client.post("/api/players/", json={"name": "Alice"})
+    assert r.status_code == 201
+
+    r2 = client.get("/api/stats/")
+    assert r2.headers.get("X-Stats-Cache") == "MISS"
+    assert r2.headers["ETag"] != etag1
+
+    # Rename the player — again a player-only write.
+    pid = r.json()["id"]
+    r = client.patch(f"/api/players/{pid}", json={"name": "Alicia"})
+    assert r.status_code == 200
+
+    r3 = client.get("/api/stats/")
+    assert r3.headers.get("X-Stats-Cache") == "MISS"
+    assert r3.headers["ETag"] != r2.headers["ETag"]
+
+
+def test_stats_etag_changes_on_elo_recalc(client):
+    """Elo recalculation (a player-only write) must invalidate the stats ETag."""
+    gid = _make_game(client, name="Rated Game")
+    client.post("/api/players/", json={"name": "Alice"})
+    client.post("/api/players/", json={"name": "Bob"})
+    _add_session(client, gid, played_at="2024-01-15")
+    client.post(
+        f"/api/games/{gid}/sessions",
+        json={
+            "played_at": "2024-02-01",
+            "player_names": ["Alice", "Bob"],
+            "scores": {"Alice": 10, "Bob": 4},
+        },
+    )
+
+    r1 = client.get("/api/stats/")
+    etag1 = r1.headers["ETag"]
+
+    r = client.post("/api/players/admin/recalculate-elo")
+    assert r.status_code == 200
+
+    r2 = client.get("/api/stats/")
+    assert r2.headers.get("X-Stats-Cache") == "MISS"
+    assert r2.headers["ETag"] != etag1
+
+
+def test_stats_cache_keeps_recent_etag_after_churn(client):
+    """Cache must not fully clear on a single miss — a recently-seen ETag
+    that the data returns to is still served from cache (HIT)."""
+    _make_game(client, name="Game A")
+    r1 = client.get("/api/stats/")
+    assert r1.headers.get("X-Stats-Cache") == "MISS"
+    etag1 = r1.headers["ETag"]
+
+    # Adding a game churns the ETag (cache must keep the E1 entry)...
+    gid2 = _make_game(client, name="Game B")
+    r3 = client.get("/api/stats/")
+    assert r3.headers.get("X-Stats-Cache") == "MISS"
+    assert r3.headers["ETag"] != etag1
+
+    # ...deleting it restores the original state; the E1 body is reused.
+    assert client.delete(f"/api/games/{gid2}").status_code == 204
+    r4 = client.get("/api/stats/")
+    assert r4.headers["ETag"] == etag1
+    assert r4.headers.get("X-Stats-Cache") == "HIT"

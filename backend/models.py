@@ -98,6 +98,9 @@ class Player(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(255), nullable=False, unique=True)
     date_added = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    # Touched on any ORM-level write (rename, avatar, Elo recalc) so the
+    # collection ETag / stats cache invalidate on player-only changes.
+    date_modified = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False)
     avatar_ext = Column(String(10), nullable=True)    # e.g. ".jpg" when a custom photo is uploaded
     avatar_preset = Column(String(50), nullable=True)  # e.g. "meeple" when a default SVG is chosen
     elo_rating = Column(Float, default=1500.0, nullable=False)

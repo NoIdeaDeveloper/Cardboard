@@ -24,6 +24,7 @@ router = APIRouter(prefix="/api", tags=["stats"])
 _stats_cache: dict[str, tuple[float, bytes]] = {}
 _stats_cache_lock = threading.Lock()
 _STATS_CACHE_TTL = 60.0  # seconds
+_STATS_CACHE_MAX_ENTRIES = 5  # evict oldest beyond this
 
 
 from routers.stats._common import _status_counts, _trade_sell_candidates
@@ -832,8 +833,15 @@ def get_stats(request: Request, db: Session = Depends(get_db)):
     body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
 
     with _stats_cache_lock:
-        _stats_cache.clear()
+        # Bounded cache: keep the newest few ETags instead of clearing the
+        # whole cache on every miss, so transient ETag churn (rapid session
+        # logging) doesn't evict entries that other clients are still hitting.
         _stats_cache[etag] = (time.monotonic(), body)
+        if len(_stats_cache) > _STATS_CACHE_MAX_ENTRIES:
+            for stale_etag, (ts, _) in sorted(
+                _stats_cache.items(), key=lambda kv: kv[1][0]
+            )[: len(_stats_cache) - _STATS_CACHE_MAX_ENTRIES]:
+                del _stats_cache[stale_etag]
 
     resp = Response(content=body, media_type="application/json")
     resp.headers["ETag"] = etag

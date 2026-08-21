@@ -288,10 +288,25 @@ def validate_url_safety(url: str, max_length: int = 2000) -> Tuple[bool, Optiona
 
 
 def collection_etag(db: Session) -> str:
-    """Compute a stable ETag from game count + latest date_modified."""
+    """Compute a stable ETag from game count + latest date_modified.
+
+    Covers player and session changes too (via max date_modified on each
+    table), so the ETag changes on any write that affects the collection,
+    stats, or players views — not just game edits.
+    """
     import models as _models
-    row = db.query(func.count(_models.Game.id), func.max(_models.Game.date_modified)).first()
-    return f'"{hashlib.md5(f"{row[0]}:{row[1]}".encode(), usedforsecurity=False).hexdigest()}"'
+    from sqlalchemy import select
+    game_count, game_modified = db.execute(
+        select(func.count(_models.Game.id), func.max(_models.Game.date_modified))
+    ).first()
+    player_modified = db.execute(
+        select(func.max(_models.Player.date_modified))
+    ).scalar()
+    session_modified = db.execute(
+        select(func.max(_models.PlaySession.date_added))
+    ).scalar()
+    payload = f"{game_count}:{game_modified}:{player_modified}:{session_modified}"
+    return f'"{hashlib.md5(payload.encode(), usedforsecurity=False).hexdigest()}"'
 
 
 def get_game_or_404(game_id: int, db) -> "models.Game":

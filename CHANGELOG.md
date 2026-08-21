@@ -15,6 +15,8 @@ Cardboard uses [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **Stats dashboard could serve stale data after player changes** — the collection ETag that gates the `/api/stats` cache only hashed the game count and `max(Game.date_modified)`, so writes that touched no game row (creating/renaming a player, avatar changes, Elo recalculation) left the ETag unchanged and the stats TTL cache served up to 60 seconds of stale leaderboard data. Players now carry a `date_modified` column (bumped on any ORM-level write, including Elo recalc), and the ETag now covers player and session change signals as well. The stats cache no longer clears entirely on a single miss — it keeps the five most recent entries, so a transient ETag churn no longer evicts every cached payload.
+
 - **"Load more" could create holes or duplicates in the collection** — clicking "Load more" while a full `loadCollection` refresh was already in flight fetched the next page at the *old* offset but shared the same request id, so the stale page passed the supersede guard and merged into the freshly-reset list, skipping or duplicating games. The request now snapshots the offset it fetched for and discards the response unless the list still expects that offset.
 
 - **Page permanently scroll-locked after rapid modal open sequences** — `openModal` incremented the open-modal counter on every call while `closeModal` only decremented inside a 200 ms fade-out timeout. A double-click on a game card (or any open→open sequence) inflated the counter, so `document.body.style.overflow` was never restored and the page stayed scroll-locked. Re-opening the already-open modal no longer double-counts, and a second `closeModal` during the fade-out is ignored.
