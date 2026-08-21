@@ -193,11 +193,23 @@ body::after {
 
 a { color: var(--accent); text-decoration: none; }
 a:hover { color: var(--accent-2); text-decoration: underline; }
+a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--radius-xs); }
+
+/* Keyboard-focus fallback: interactive elements that have no bespoke
+   focus ring still get a visible outline. Excludes classes that style
+   :focus-visible with a box-shadow ring (they'd otherwise show both). */
+:where(button:not(.btn, .icon-btn, .nav-btn, .pill, .stats-jump-chip, .star-btn, .avatar-preset-item, .game-list-item), [role="button"]):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
 
 /* Custom scrollbar */
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: var(--bg); }
 ::-webkit-scrollbar-thumb { background: var(--bg-4); border-radius: var(--radius-xs); }
+
+/* Selection */
+::selection { background: var(--accent); color: var(--bg); }
 
 /* ===== Header ===== */
 .header {
