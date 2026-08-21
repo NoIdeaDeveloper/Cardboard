@@ -3114,6 +3114,9 @@ if ('serviceWorker' in navigator) {
       function renderList() {
         const listEl = inner.querySelector('#players-list');
         if (!listEl) return;
+        // Don't clobber an in-flight rename input or delete confirmation —
+        // re-rendering would silently discard the user's typed text.
+        if (listEl.querySelector('.player-edit-input, .player-confirm-row')) return;
         const filtered = getSortedFiltered();
         if (!filtered.length && allPlayers.length === 0) {
           listEl.innerHTML = playersEmptyHtml;
@@ -3260,6 +3263,7 @@ if ('serviceWorker' in navigator) {
             nameSpan.style.display = '';
             if (countSpan) countSpan.style.display = '';
             actionsDiv.style.display = '';
+            renderList();
           });
 
           async function doRename() {
@@ -3308,6 +3312,7 @@ if ('serviceWorker' in navigator) {
           confirmRow.querySelector('.confirm-no').addEventListener('click', () => {
             confirmRow.remove();
             row.style.display = '';
+            renderList();
           });
 
           const confirmYesBtn = confirmRow.querySelector('.confirm-yes');
