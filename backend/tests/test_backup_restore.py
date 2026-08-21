@@ -150,6 +150,35 @@ def _valid_schema_db() -> bytes:
         os.unlink(tmp.name)
 
 
+def _db_with_version(version: str, with_fts: bool = True) -> bytes:
+    """Return a SQLite DB with the full schema, an alembic_version row, and
+    (optionally) the games_fts FTS5 virtual table."""
+    tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+    tmp.close()
+    try:
+        eng = create_engine(f"sqlite:///{tmp.name}", connect_args={"check_same_thread": False})
+        Base.metadata.create_all(bind=eng)
+        eng.dispose()
+        conn = sqlite3.connect(tmp.name)
+        conn.execute("CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL PRIMARY KEY)")
+        conn.execute("INSERT INTO alembic_version VALUES (?)", (version,))
+        if with_fts:
+            conn.executescript("""
+                CREATE VIRTUAL TABLE games_fts USING fts5(
+                    name, content='games', content_rowid='id', tokenize='porter unicode61'
+                );
+                CREATE TRIGGER games_fts_ai AFTER INSERT ON games BEGIN
+                    INSERT INTO games_fts(rowid, name) VALUES (new.id, new.name);
+                END;
+            """)
+        conn.commit()
+        conn.close()
+        with open(tmp.name, "rb") as f:
+            return f.read()
+    finally:
+        os.unlink(tmp.name)
+
+
 def _db_missing_table(table_name: str) -> bytes:
     """Return a SQLite DB with the full schema minus one table."""
     tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
@@ -483,6 +512,76 @@ def test_restore_accepts_valid_schema(backup_client):
     zip_bytes = _make_zip({"cardboard.db": _valid_schema_db()})
     r = _post_restore(backup_client, zip_bytes)
     assert r.status_code == 200
+
+
+def test_restore_rejects_older_migration_version(backup_client, file_env):
+    """A backup from an older app version must be rejected before the swap."""
+    # Give the live DB an alembic_version row so the version gate is active.
+    conn = sqlite3.connect(file_env["db_path"])
+    conn.execute("CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL PRIMARY KEY)")
+    conn.execute("INSERT INTO alembic_version VALUES ('0023')")
+    conn.commit()
+    conn.close()
+
+    zip_bytes = _make_zip({"cardboard.db": _db_with_version("0020")})
+    r = _post_restore(backup_client, zip_bytes)
+    assert r.status_code == 422
+    assert "incompatible app version" in r.json()["detail"]
+
+    # Live DB must be untouched
+    conn = sqlite3.connect(file_env["db_path"])
+    rows = conn.execute("SELECT name FROM games").fetchall()
+    conn.close()
+    assert any(row[0] == "Catan" for row in rows)
+
+
+def test_restore_accepts_matching_migration_version(backup_client, file_env):
+    """A backup at the same migration version as the live DB restores fine."""
+    conn = sqlite3.connect(file_env["db_path"])
+    conn.execute("CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL PRIMARY KEY)")
+    conn.execute("INSERT INTO alembic_version VALUES ('0023')")
+    conn.commit()
+    conn.close()
+
+    zip_bytes = _make_zip({"cardboard.db": _db_with_version("0023")})
+    r = _post_restore(backup_client, zip_bytes)
+    assert r.status_code == 200
+
+    conn = sqlite3.connect(file_env["db_path"])
+    version = conn.execute("SELECT version_num FROM alembic_version").fetchone()[0]
+    conn.close()
+    assert version == "0023"
+
+
+def test_restore_rejects_backup_without_fts_index(backup_client, file_env):
+    """When the live DB has games_fts, a backup without it must be rejected."""
+    conn = sqlite3.connect(file_env["db_path"])
+    conn.executescript("""
+        CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL PRIMARY KEY);
+        INSERT INTO alembic_version VALUES ('0023');
+        CREATE VIRTUAL TABLE games_fts USING fts5(
+            name, content='games', content_rowid='id', tokenize='porter unicode61'
+        );
+    """)
+    conn.commit()
+    conn.close()
+
+    zip_bytes = _make_zip({"cardboard.db": _db_with_version("0023", with_fts=False)})
+    r = _post_restore(backup_client, zip_bytes)
+    assert r.status_code == 422
+    assert "games_fts" in r.json()["detail"]
+
+
+def test_restore_removes_stale_wal_sidecar(backup_client, file_env):
+    """After a restore, a leftover -wal file from the old DB must be gone."""
+    wal_path = file_env["db_path"] + "-wal"
+    with open(wal_path, "wb") as f:
+        f.write(b"\x37\xe9\xcb\x92" + b"\x00" * 32)  # SQLite WAL header
+
+    raw = _get_backup_zip(backup_client)
+    r = _post_restore(backup_client, raw)
+    assert r.status_code == 200
+    assert not os.path.exists(wal_path)
 
 
 # ---------------------------------------------------------------------------

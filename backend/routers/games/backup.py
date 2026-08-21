@@ -13,6 +13,7 @@ import tempfile
 import zipfile
 from datetime import date as _date
 from datetime import datetime, timezone
+from typing import Optional
 
 import models
 import schemas
@@ -708,6 +709,59 @@ def _validate_db_schema(conn: sqlite3.Connection):
             )
 
 
+def _db_has_table(conn: sqlite3.Connection, name: str) -> bool:
+    return conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)
+    ).fetchone() is not None
+
+
+def _read_alembic_version(conn: sqlite3.Connection) -> Optional[str]:
+    if not _db_has_table(conn, "alembic_version"):
+        return None
+    try:
+        row = conn.execute("SELECT version_num FROM alembic_version").fetchone()
+    except sqlite3.DatabaseError:
+        return None
+    return row[0] if row else None
+
+
+def _validate_backup_matches_live_state(backup_conn: sqlite3.Connection, live_conn: sqlite3.Connection):
+    """Ensure the backup was created by a schema state the running app can boot.
+
+    Compares alembic migration version and the presence of the FTS5 search
+    index (which lives outside Base.metadata) against the live database. A
+    backup from an older app version can pass the column-level schema check
+    yet leave the app unable to start after the swap, so this gate is checked
+    before os.replace.
+    """
+    live_version = _read_alembic_version(live_conn)
+    backup_version = _read_alembic_version(backup_conn)
+    if live_version is not None:
+        if backup_version is None:
+            raise HTTPException(
+                status_code=422,
+                detail="Backup has no migration version information. The backup may be from an incompatible version.",
+            )
+        if backup_version != live_version:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Backup was created by an incompatible app version "
+                       f"(migration {backup_version}, current is {live_version}). "
+                       "Upgrade the app before restoring, or use a backup from the current version.",
+            )
+    elif backup_version is not None:
+        # Live DB predates alembic tracking; accept any backup that is at
+        # least as new (it will be the one running from now on).
+        pass
+
+    if _db_has_table(live_conn, "games_fts") and not _db_has_table(backup_conn, "games_fts"):
+        raise HTTPException(
+            status_code=422,
+            detail="Backup is missing the game-name search index (games_fts). "
+                   "The backup may be from an incompatible version.",
+        )
+
+
 def _extract_and_validate_db(zf: zipfile.ZipFile, tmp_zip_name: str, db_suffix: str) -> tuple[sqlite3.Connection, str]:
     """Extract cardboard.db from a ZIP and return an open, integrity- and schema-checked connection."""
     if "cardboard.db" not in zf.namelist():
@@ -761,13 +815,38 @@ async def restore_backup(request: Request, file: UploadFile = File(...)):
     tmp_zip = None
     try:
         tmp_zip = await _stream_backup_to_tempfile(file, dir=data_dir)
+
+        # Checkpoint the live database so all committed WAL frames are folded
+        # into the main file before it is replaced. Without this, frames
+        # still sitting in cardboard.db-wal would be silently lost.
+        # (Guard on file existence — sqlite3.connect would create an empty file.)
+        if os.path.isfile(db_path):
+            try:
+                live_conn = sqlite3.connect(db_path)
+                live_conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+                live_conn.close()
+            except sqlite3.DatabaseError:
+                pass  # live DB not open / not in WAL mode — nothing to checkpoint
+
         with zipfile.ZipFile(tmp_zip.name, "r") as zf:
             conn, db_tmp = _extract_and_validate_db(zf, tmp_zip.name, ".restore.db")
+            if os.path.isfile(db_path):
+                live_check = sqlite3.connect(db_path)
+                try:
+                    _validate_backup_matches_live_state(conn, live_check)
+                finally:
+                    live_check.close()
             conn.close()
 
             # Atomically replace the database — temp file is in same dir as db_path
             os.replace(db_tmp, db_path)
             db_tmp = None  # os.replace consumed it
+
+            # Remove any stale WAL/shm sidecars from the previous database.
+            # SQLite would otherwise treat them as valid WAL data for the new
+            # main file and replay them on the next connection, corrupting it.
+            for sidecar in (db_path + "-wal", db_path + "-shm"):
+                safe_delete_file(sidecar)
 
             # Invalidate the connection pool so all future requests open fresh
             # connections against the restored file (old pooled connections still

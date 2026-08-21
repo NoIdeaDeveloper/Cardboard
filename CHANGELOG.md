@@ -15,6 +15,8 @@ Cardboard uses [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **Restore could swap in an incompatible database and lose pending writes** — `POST /api/games/restore` replaced the live database after a column-level schema check only. A backup from an older app version (older migration) or one missing the `games_fts` full-text index could pass validation yet leave the app unable to boot, and committed frames still sitting in the WAL file were silently lost on replace. Restore now (1) runs `PRAGMA wal_checkpoint(TRUNCATE)` on the live database before the swap, (2) rejects backups whose `alembic_version` does not match the running app's, (3) rejects backups missing `games_fts` when the live database has it, and (4) deletes stale `-wal`/`-shm` sidecars after the swap so SQLite never replays the old database's journal against the new file. Restores of unversioned (non-alembic) databases remain accepted.
+
 - **Elo recalculation reset `games_played` to 1 on every session** — the replay loop in `recalculate_elo_for_players` used `games_played[pid] = 1` instead of `+= 1`, so after a player's first session every replayed game kept the count at 1. The new-player K-factor (40) was applied for the entire replay, `EloHistory.games_played_after` snapshots were wrong, and the final `player.games_played` was permanently undercounted after any recalc. The count now increments correctly, and a regression test verifies `games_played` survives a full recalculation.
 
 ---
