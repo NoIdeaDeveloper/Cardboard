@@ -281,6 +281,47 @@ def test_bgg_plays_import(client):
     assert games[0]["last_played"] == "2024-03-10"
 
 
+def test_bgg_plays_import_dedupes_within_file(client):
+    """Duplicate (game, date) rows in one file must only import once — the
+    in-memory dedupe map must track rows added during the same import."""
+    _bgg_upload(client, _BGG_COLLECTION_XML)
+    game_id = client.get("/api/games/?search=Gloomhaven").json()[0]["id"]
+    play_block = _BGG_PLAYS_XML[_BGG_PLAYS_XML.index("<play "):]
+    play_block = play_block[:play_block.index("</plays>")]
+    dup_play = play_block.replace('<play id="1"', '<play id="2"', 1)
+    combined = _BGG_PLAYS_XML.replace("</plays>", dup_play + "</plays>")
+    r = client.post(
+        "/api/games/import/bgg-plays",
+        files={"file": ("plays.xml", io.BytesIO(combined.encode()), "text/xml")},
+    )
+    assert r.status_code == 200
+    data = r.json()
+    assert data["imported"] == 1
+    assert data["skipped"] == 1
+    sessions = client.get(f"/api/games/{game_id}/sessions").json()
+    assert len(sessions) == 1
+
+
+def test_bgg_plays_import_quantity_respects_existing(client):
+    """quantity=2 with one existing session on the same date imports only one."""
+    _bgg_upload(client, _BGG_COLLECTION_XML)
+    # First import: quantity=2 → two sessions
+    qty_xml = _BGG_PLAYS_XML.replace('quantity="1"', 'quantity="2"')
+    r = client.post(
+        "/api/games/import/bgg-plays",
+        files={"file": ("plays.xml", io.BytesIO(qty_xml.encode()), "text/xml")},
+    )
+    assert r.json()["imported"] == 2
+    # Second import of the same file: both already exist → all skipped
+    r = client.post(
+        "/api/games/import/bgg-plays",
+        files={"file": ("plays.xml", io.BytesIO(qty_xml.encode()), "text/xml")},
+    )
+    data = r.json()
+    assert data["imported"] == 0
+    assert data["skipped"] == 2
+
+
 def test_bgg_plays_import_skips_unknown_game(client):
     r = client.post(
         "/api/games/import/bgg-plays",

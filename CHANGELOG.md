@@ -17,6 +17,8 @@ Cardboard uses [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **BGG plays import ran one query per play row (N+1)** — every `<play>` element issued a `COUNT(*)` to dedupe on `(game_id, played_at)`, and every affected game then ran its own `MAX(played_at)` + fetch to refresh `last_played`; large plays exports became quadratic. The existing `(game_id, played_at)` pairs are now pre-loaded into one in-memory map (kept up to date as rows are added within the same file), and `last_played` is recomputed for all affected games with a single `GROUP BY` query.
+
 - **Typing in the players search discarded an open rename field** — the players modal's list re-rendered on every keystroke of the search box, silently destroying an in-progress inline rename input (and its typed text) or delete confirmation. The list now stays untouched while a rename input or confirm row is open, and the list re-syncs with the current search/sort after cancelling either action.
 
 - **Deleting a player left opponents' Elo ratings stale** — deleting a player cascaded their `SessionPlayer` rows away, but the surviving players' Elo ratings were computed against the deleted player and were never recomputed, so ratings stayed inflated/deflated forever. Deleting a player now collects every player who shared a session with them and recalculates their Elo from the remaining session history (players with no remaining scored sessions are reset to the 1500 default).

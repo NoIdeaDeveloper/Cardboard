@@ -4,6 +4,8 @@ import io
 import json
 import logging
 import xml.etree.ElementTree as ET
+from datetime import date as date_cls
+from datetime import datetime, timezone
 
 import defusedxml.ElementTree as DefusedET
 import models
@@ -189,8 +191,6 @@ async def import_bgg(file: UploadFile = File(...), db: Session = Depends(get_db)
 @router.post("/import/bgg-plays")
 async def import_bgg_plays(file: UploadFile = File(...), db: Session = Depends(get_db)):
     """Import play history from a BGG plays XML export."""
-    from routers.sessions import _sync_last_played
-
     content = await file.read(BGG_PLAYS_MAX_BYTES + 1)
     if len(content) > BGG_PLAYS_MAX_BYTES:
         raise HTTPException(status_code=413, detail="File too large (max 20 MB)")
@@ -211,11 +211,20 @@ async def import_bgg_plays(file: UploadFile = File(...), db: Session = Depends(g
     # Pre-load all games into dicts keyed by bgg_id and lowercased name (N+1 fix).
     games_by_bgg_id: dict[int, models.Game] = {}
     games_by_name: dict[str, models.Game] = {}
+    games_by_id: dict[int, models.Game] = {}
     for g in db.query(models.Game).all():
+        games_by_id[g.id] = g
         if g.bgg_id is not None:
             games_by_bgg_id[g.bgg_id] = g
         if g.name:
             games_by_name[g.name.lower()] = g
+
+    # Pre-load existing (game_id, played_at) counts so dedupe is one query
+    # instead of one per <play> row.
+    existing_pairs: dict[tuple[int, date_cls], int] = {}
+    for gid, played in db.query(models.PlaySession.game_id, models.PlaySession.played_at).all():
+        key = (gid, played)
+        existing_pairs[key] = existing_pairs.get(key, 0) + 1
 
     for play in plays:
         game_name = ""
@@ -246,7 +255,6 @@ async def import_bgg_plays(file: UploadFile = File(...), db: Session = Depends(g
 
             date_str = play.get("date", "")
             try:
-                from datetime import date as date_cls
                 played_at = date_cls.fromisoformat(date_str)
             except (ValueError, TypeError):
                 results["skipped"] += 1
@@ -267,14 +275,7 @@ async def import_bgg_plays(file: UploadFile = File(...), db: Session = Depends(g
 
             comment = (play.findtext("comments") or "").strip() or None
 
-            existing_count = (
-                db.query(func.count(models.PlaySession.id))
-                .filter(
-                    models.PlaySession.game_id == game.id,
-                    models.PlaySession.played_at == played_at,
-                )
-                .scalar() or 0
-            )
+            existing_count = existing_pairs.get((game.id, played_at), 0)
             for i in range(quantity):
                 if i < existing_count:
                     results["skipped"] += 1
@@ -288,14 +289,34 @@ async def import_bgg_plays(file: UploadFile = File(...), db: Session = Depends(g
                 )
                 db.add(db_session)
                 results["imported"] += 1
+                # Newly-added plays extend the dedupe map so duplicate rows
+                # later in the same file don't import twice.
+                key = (game.id, played_at)
+                existing_pairs[key] = existing_pairs.get(key, 0) + 1
 
         except Exception as exc:
             results["errors"].append(f"Skipped '{game_name or 'unknown'}': {type(exc).__name__}")
             logger.debug("BGG plays import row error for '%s': %s", game_name, exc)
 
     db.flush()
-    for gid in affected_game_ids:
-        _sync_last_played(gid, db, commit=False)
+    # Batch-recompute last_played for every affected game in a single grouped
+    # query instead of one MAX(played_at) + fetch per game.
+    if affected_game_ids:
+        latest_rows = (
+            db.query(
+                models.PlaySession.game_id,
+                func.max(models.PlaySession.played_at),
+            )
+            .filter(models.PlaySession.game_id.in_(affected_game_ids))
+            .group_by(models.PlaySession.game_id)
+            .all()
+        )
+        latest_by_game = dict(latest_rows)
+        for gid in affected_game_ids:
+            game = games_by_id.get(gid)
+            if game:
+                game.last_played = latest_by_game.get(gid)
+                game.date_modified = datetime.now(timezone.utc)
     try:
         db.commit()
     except Exception as exc:
