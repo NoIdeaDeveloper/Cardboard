@@ -2005,10 +2005,17 @@ if ('serviceWorker' in navigator) {
       container.after(btn);
       btn.addEventListener('click', async () => {
         const capturedReqId = _loadCollectionReqId;
+        const requestedOffset = state.serverOffset;
         await withLoading(btn, async () => {
           try {
-            const { data: nextPage, total } = await API.getGames(buildFilterParams(state.serverOffset));
-            if (capturedReqId !== _loadCollectionReqId) return;  // superseded by newer load
+            const { data: nextPage, total } = await API.getGames(buildFilterParams(requestedOffset));
+            // Discard if a newer loadCollection superseded us, or if the
+            // offset we fetched for no longer matches state. The second check
+            // covers a loadCollection that was already in flight when this
+            // click happened: it shares our reqId, so when it resolves it
+            // resets serverOffset, and merging a page fetched for the stale
+            // offset would create a hole (or duplicates) in the list.
+            if (capturedReqId !== _loadCollectionReqId || requestedOffset !== state.serverOffset) return;
             if (nextPage) {
               state.games = state.games.concat(nextPage);
               state.serverOffset += nextPage.length;

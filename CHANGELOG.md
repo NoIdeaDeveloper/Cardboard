@@ -15,6 +15,8 @@ Cardboard uses [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **"Load more" could create holes or duplicates in the collection** — clicking "Load more" while a full `loadCollection` refresh was already in flight fetched the next page at the *old* offset but shared the same request id, so the stale page passed the supersede guard and merged into the freshly-reset list, skipping or duplicating games. The request now snapshots the offset it fetched for and discards the response unless the list still expects that offset.
+
 - **Page permanently scroll-locked after rapid modal open sequences** — `openModal` incremented the open-modal counter on every call while `closeModal` only decremented inside a 200 ms fade-out timeout. A double-click on a game card (or any open→open sequence) inflated the counter, so `document.body.style.overflow` was never restored and the page stayed scroll-locked. Re-opening the already-open modal no longer double-counts, and a second `closeModal` during the fade-out is ignored.
 
 - **Session winner FK silently cleared on unrelated PATCHes** — `PATCH /api/sessions/{id}` re-resolved `winner_player_id` from the winner name on every request that included `winner`, even when the name was unchanged. Because the free-text `winner` is matched case-sensitively against registered players, re-saving a form (or any client that always sends `winner`) could wipe a valid FK with `None` — e.g. after a player rename. The FK is now re-resolved only when the winner string actually changes.
