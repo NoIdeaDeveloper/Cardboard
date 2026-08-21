@@ -135,10 +135,7 @@ function buildGameCard(game) {
   if (game.year_published) metaHtml += `<span class="chip">${escapeHtml(game.year_published)}</span>`;
 
   // --- Heat level based on recency (pre-computed by server) ---
-  const _now = Date.now();
-  const _daysSince = game.last_played
-    ? Math.floor((_now - new Date(game.last_played + 'T00:00:00')) / 86400000)
-    : Infinity;
+  const _daysSince = daysSinceDate(game.last_played) ?? Infinity;
   const _heatLevel = game.heat_level ?? 0;
   el.dataset.heat = _heatLevel;
 

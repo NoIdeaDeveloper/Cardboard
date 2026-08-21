@@ -3,11 +3,11 @@ import { loadScripts } from './helpers/load.js';
 
 const {
   escapeHtml, parseList, pluralize, formatDate,
-  formatPlaytime, formatPlayers, renderPlayerAvatar,
+  formatPlaytime, formatPlayers, renderPlayerAvatar, daysSinceDate,
 } = loadScripts(
   ['shared-utils.js'],
   ['escapeHtml', 'parseList', 'pluralize', 'formatDate',
-    'formatPlaytime', 'formatPlayers', 'renderPlayerAvatar'],
+    'formatPlaytime', 'formatPlayers', 'renderPlayerAvatar', 'daysSinceDate'],
 );
 
 describe('escapeHtml', () => {
@@ -59,6 +59,39 @@ describe('formatDate', () => {
   });
   it('returns the input unchanged when unparseable', () => {
     expect(formatDate('garbage')).toBe('garbage');
+  });
+});
+
+describe('daysSinceDate', () => {
+  it('returns null for missing/unparseable input', () => {
+    expect(daysSinceDate('')).toBeNull();
+    expect(daysSinceDate(null)).toBeNull();
+    expect(daysSinceDate('garbage')).toBeNull();
+  });
+  it('returns 0 for today (UTC-aligned)', () => {
+    const d = new Date();
+    const todayIso = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+    expect(daysSinceDate(todayIso)).toBe(0);
+  });
+  it('returns 1 for yesterday and 7 for a week ago', () => {
+    const d = new Date();
+    const iso = (offsetDays) => {
+      const t = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() - offsetDays));
+      return `${t.getUTCFullYear()}-${String(t.getUTCMonth() + 1).padStart(2, '0')}-${String(t.getUTCDate()).padStart(2, '0')}`;
+    };
+    expect(daysSinceDate(iso(1))).toBe(1);
+    expect(daysSinceDate(iso(7))).toBe(7);
+  });
+  it('is timezone-stable: the day boundary is UTC, not local', () => {
+    // 2025-01-09 01:00 local in UTC+2 is still the 8th in UTC — but the date
+    // string itself must always map to the same day regardless of the local
+    // timezone the browser runs in. Compare against UTC day number directly.
+    const target = new Date('2025-01-09T00:00:00Z');
+    const todayUtc = new Date();
+    const dayDiff = Math.floor(
+      (Date.UTC(todayUtc.getUTCFullYear(), todayUtc.getUTCMonth(), todayUtc.getUTCDate()) - target.getTime()) / 86400000
+    );
+    expect(daysSinceDate('2025-01-09')).toBe(dayDiff);
   });
 });
 

@@ -28,6 +28,19 @@ function formatDate(isoDate) {
   return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
 }
 
+// Whole calendar days between a YYYY-MM-DD date and today, measured in UTC
+// days — the same UTC convention formatDate uses, so a date rendered as
+// "Today" here always matches the date shown in the modal. Returns null for
+// missing/unparseable input.
+function daysSinceDate(isoDate) {
+  if (!isoDate) return null;
+  const d = new Date(isoDate + 'T00:00:00Z');
+  if (isNaN(d)) return null;
+  const now = new Date();
+  const todayUtc = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  return Math.floor((todayUtc - d.getTime()) / 86400000);
+}
+
 function formatPlaytime(min, max) {
   if (!min && !max) return '';
   if (min === max || !max) return `${min} min`;

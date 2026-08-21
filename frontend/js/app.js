@@ -1584,9 +1584,7 @@ if ('serviceWorker' in navigator) {
       </div>
       <div class="recently-played-scroll" id="recently-played-scroll">
         ${recentlyPlayed.map(g => {
-          const daysAgo = g.last_played
-            ? Math.floor((Date.now() - new Date(g.last_played + 'T00:00:00')) / 86400000)
-            : null;
+          const daysAgo = g.last_played ? daysSinceDate(g.last_played) : null;
           const dateLabel = daysAgo === null ? '' : daysAgo === 0 ? 'Today' : daysAgo === 1 ? 'Yesterday' : `${daysAgo}d ago`;
           return `<div class="recently-played-card" data-game-id="${g.id}" tabindex="0" title="${escapeHtml(g.name)}">
             ${isSafeUrl(g.image_url)
@@ -3563,7 +3561,7 @@ if ('serviceWorker' in navigator) {
           ? Math.round((stats.win_count / stats.session_count) * 100)
           : 0;
         const lastPlayed = stats.last_played
-          ? new Date(stats.last_played).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+          ? new Date(stats.last_played).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })
           : '—';
 
         const topGamesHtml = stats.top_games.length
