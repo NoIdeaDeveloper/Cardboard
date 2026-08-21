@@ -2139,9 +2139,15 @@ function openModal(contentEl) {
     _modalTrapHandler = null;
   }
 
+  // Only count the first open of a rapid open→open sequence (e.g. a
+  // double-click firing openGameModal twice). Without this guard the count
+  // drifts upward and document.body.overflow is never restored.
+  const wasOpen = modal.style.display === 'flex';
   modal.style.display = 'flex';
-  _modalOpenCount++;
-  document.body.style.overflow = 'hidden';
+  if (!wasOpen) {
+    _modalOpenCount++;
+    document.body.style.overflow = 'hidden';
+  }
   _modalPrevFocus = document.activeElement;
 
   requestAnimationFrame(() => {
@@ -2173,6 +2179,12 @@ function openModal(contentEl) {
 
 function closeModal() {
   const modal = document.getElementById('game-modal');
+
+  // Ignore a second close while the fade-out is already in progress
+  // (e.g. a double-click on the close button) — otherwise the counter
+  // would be decremented twice.
+  if (_modalCloseTimeout) return;
+
   modal.classList.remove('open');
 
   if (_modalTrapHandler) {

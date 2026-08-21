@@ -15,6 +15,8 @@ Cardboard uses [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **Page permanently scroll-locked after rapid modal open sequences** — `openModal` incremented the open-modal counter on every call while `closeModal` only decremented inside a 200 ms fade-out timeout. A double-click on a game card (or any open→open sequence) inflated the counter, so `document.body.style.overflow` was never restored and the page stayed scroll-locked. Re-opening the already-open modal no longer double-counts, and a second `closeModal` during the fade-out is ignored.
+
 - **Session winner FK silently cleared on unrelated PATCHes** — `PATCH /api/sessions/{id}` re-resolved `winner_player_id` from the winner name on every request that included `winner`, even when the name was unchanged. Because the free-text `winner` is matched case-sensitively against registered players, re-saving a form (or any client that always sends `winner`) could wipe a valid FK with `None` — e.g. after a player rename. The FK is now re-resolved only when the winner string actually changes.
 
 - **Filter chips could execute injected HTML via `data-value`** — the collection toolbar's removable filter chips interpolated the filter value (mechanics, categories, labels, designers, publishers, locations — all user-controlled strings) into the `data-value` attribute without escaping. A game metadata value containing `" onmouseover="…` executed when hovered. The attribute is now escaped with `escapeHtml`, which round-trips correctly through the browser's attribute decoding for the chip-removal click handler.
